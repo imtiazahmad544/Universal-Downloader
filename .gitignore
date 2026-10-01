@@ -20,3 +20,6 @@ dist/
 # Misc
 .DS_Store
 *.log
+# Build artifacts
+artifacts/
+client/artifacts/
