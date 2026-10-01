@@ -1,0 +1,87 @@
+<UserControl x:Class="UniversalDownloader.App.Views.DashboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <ScrollViewer Background="#F9FAFB" Padding="12">
+        <StackPanel>
+            <DockPanel LastChildFill="False" Margin="6,0,6,8">
+                <TextBlock Text="Dashboard" FontSize="20" FontWeight="Bold" DockPanel.Dock="Left"
+                           VerticalAlignment="Center"/>
+                <Button Content="Refresh" Command="{Binding RefreshCommand}" DockPanel.Dock="Right"/>
+            </DockPanel>
+
+            <!-- T-3 renewal banner (SRS FR-03 / FR-13) -->
+            <Border Background="{StaticResource WarningBackgroundBrush}" BorderBrush="{StaticResource WarningBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12" Margin="6"
+                    Visibility="{Binding ShowRenewalBanner, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding RenewalBannerText}" TextWrapping="Wrap"
+                           Foreground="{StaticResource WarningBrush}" FontWeight="SemiBold"/>
+            </Border>
+
+            <!-- Account lockout -->
+            <Border Background="{StaticResource DangerBackgroundBrush}" BorderBrush="{StaticResource DangerBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12" Margin="6"
+                    Visibility="{Binding ShowLockout, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding LockoutText}" TextWrapping="Wrap"
+                           Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"/>
+            </Border>
+
+            <UniformGrid Columns="3">
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="SUBSCRIPTION" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding SubscriptionStatusText}" Style="{StaticResource CardValue}"/>
+                        <TextBlock Text="{Binding DaysRemainingText}" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="EXPIRES" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding ExpiryText}" FontSize="16" FontWeight="Bold"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="CONNECTIVITY" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding ConnectivityText}" FontSize="16" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding WorkerStateText}" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="SOURCES" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding SourceCount}" Style="{StaticResource CardValue}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="QUEUED" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding QueuedCount}" Style="{StaticResource CardValue}"/>
+                        <TextBlock Text="{Binding ActiveCount, StringFormat='{}{0} active'}" Foreground="{StaticResource MutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource CardBorder}">
+                    <StackPanel>
+                        <TextBlock Text="COMPLETED / FAILED" Style="{StaticResource CardTitle}"/>
+                        <TextBlock Text="{Binding CompletedCount}" Style="{StaticResource CardValue}" Foreground="{StaticResource SuccessBrush}"/>
+                        <TextBlock Text="{Binding FailedCount, StringFormat='{}{0} failed'}" Foreground="{StaticResource DangerBrush}"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="TODAY'S BATCH" Style="{StaticResource CardTitle}"/>
+                    <TextBlock Text="{Binding TodayBatchText}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding UpcomingBatchText}" TextWrapping="Wrap"
+                               Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="{Binding LastSyncText}" Foreground="{StaticResource MutedBrush}"
+                       FontSize="11" Margin="6,4,6,0"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

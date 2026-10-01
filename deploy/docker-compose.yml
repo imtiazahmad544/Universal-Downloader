@@ -1,0 +1,112 @@
+# Universal Downloader — local / VPS deployment.
+# Docker is NOT available on the dev VM; this file targets the user's own
+# machine or VPS. From deploy/:  docker compose up --build -d
+# Then seed the super admin:  docker compose exec api python -m app.seed
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: universal_downloader
+      POSTGRES_USER: udl
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U udl -d universal_downloader"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://udl:${POSTGRES_PASSWORD:-changeme-postgres}@postgres:5432/universal_downloader
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-changeme-jwt-secret-min-32-bytes}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_MINUTES: 15
+      REFRESH_TOKEN_DAYS: 30
+      BATCH_DEFAULT_SIZE: ${BATCH_DEFAULT_SIZE:-20}
+      DISCOVERY_MAX_ITEMS: ${DISCOVERY_MAX_ITEMS:-500}
+      LOG_LEVEL: INFO
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    expose:
+      - "8000"
+
+  scheduler:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://udl:${POSTGRES_PASSWORD:-changeme-postgres}@postgres:5432/universal_downloader
+      JWT_SECRET: ${JWT_SECRET:-changeme-jwt-secret-min-32-bytes}
+      SCHEDULER_INTERVAL_SECONDS: 300
+      LOG_LEVEL: INFO
+    command: ["python", "-m", "app.workers.scheduler"]
+
+  worker:
+    build: ../server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://udl:${POSTGRES_PASSWORD:-changeme-postgres}@postgres:5432/universal_downloader
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:-changeme-jwt-secret-min-32-bytes}
+      DISCOVERY_POLL_SECONDS: 30
+      DISCOVERY_MAX_ITEMS: ${DISCOVERY_MAX_ITEMS:-500}
+      LOG_LEVEL: INFO
+    command: ["python", "-m", "app.workers.discovery"]
+
+  admin-web:
+    # PLACEHOLDER — the admin web panel is phase 2 of the project.
+    # Replace this service with the real admin-web build when it exists.
+    image: nginx:alpine
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - api
+      - admin-web
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

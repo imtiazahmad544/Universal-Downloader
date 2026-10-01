@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>UniversalDownloader.App</RootNamespace>
+    <AssemblyName>UniversalDownloader.App</AssemblyName>
+    <Version>1.1.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalDownloader.Core\UniversalDownloader.Core.csproj" />
+    <ProjectReference Include="..\UniversalDownloader.Infrastructure\UniversalDownloader.Infrastructure.csproj" />
+    <ProjectReference Include="..\UniversalDownloader.Worker\UniversalDownloader.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

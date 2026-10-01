@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>UniversalDownloader.Worker</RootNamespace>
+    <AssemblyName>UniversalDownloader.Worker</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UniversalDownloader.Core\UniversalDownloader.Core.csproj" />
+    <ProjectReference Include="..\UniversalDownloader.Infrastructure\UniversalDownloader.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

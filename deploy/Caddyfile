@@ -1,0 +1,25 @@
+# Caddy reverse proxy for Universal Downloader.
+# API under /api/*, admin web panel (phase 2 placeholder) on /.
+# For local use Caddy serves HTTP; set a domain and let Caddy fetch TLS automatically.
+
+{
+	admin off
+}
+
+:80 {
+	# SaaS API (FastAPI)
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle /health {
+		reverse_proxy api:8000
+	}
+	handle /ready {
+		reverse_proxy api:8000
+	}
+
+	# Admin web panel (placeholder until phase 2)
+	handle {
+		reverse_proxy admin-web:80
+	}
+}

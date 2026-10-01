@@ -1,0 +1,53 @@
+<UserControl x:Class="UniversalDownloader.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <ScrollViewer Background="#F9FAFB" Padding="12">
+        <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" FontSize="20" FontWeight="Bold" Margin="6,6,6,12"/>
+
+            <TextBlock Text="Destination directory" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <DockPanel LastChildFill="True" Margin="6,0,6,8">
+                <Button Content="Browse..." Command="{Binding BrowseCommand}" DockPanel.Dock="Right"/>
+                <TextBox Text="{Binding DestinationDirectory, UpdateSourceTrigger=PropertyChanged}"/>
+            </DockPanel>
+
+            <TextBlock Text="File naming template" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding NamingTemplate, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,2"/>
+            <TextBlock Text="Tokens: {platform} {source} {date} {title} {media_id} {ext}. Collisions get a (2), (3)... suffix; files are never overwritten."
+                       Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="6,0,6,8" TextWrapping="Wrap"/>
+
+            <TextBlock Text="Batch length (videos per daily batch)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding BatchLength, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="120" HorizontalAlignment="Left"/>
+
+            <TextBlock Text="Concurrency limit (applies after restart)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding ConcurrencyLimit, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="120" HorizontalAlignment="Left"/>
+
+            <TextBlock Text="Timezone (IANA id, used for batch activation)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding TimezoneId, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="240" HorizontalAlignment="Left"/>
+
+            <TextBlock Text="API base URL (applies after restart)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding ApiBaseUrl, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8"/>
+
+            <StackPanel Orientation="Horizontal" Margin="6,8,6,0">
+                <Button Content="Save" Command="{Binding SaveCommand}"/>
+                <Button Content="Reset" Command="{Binding ResetCommand}"/>
+            </StackPanel>
+            <TextBlock Text="{Binding SaveMessage}" TextWrapping="Wrap" Margin="6,8,6,0" FontSize="12"
+                       Visibility="{Binding HasSaveMessage, Converter={StaticResource BoolToVis}}">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock">
+                        <Setter Property="Foreground" Value="{StaticResource DangerBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding SaveSucceeded}" Value="True">
+                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

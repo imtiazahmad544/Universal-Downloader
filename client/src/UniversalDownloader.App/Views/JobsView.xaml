@@ -1,0 +1,83 @@
+<UserControl x:Class="UniversalDownloader.App.Views.JobsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid Background="#F9FAFB">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <DockPanel LastChildFill="False" Margin="12,12,12,4">
+            <TextBlock Text="Download jobs" FontSize="20" FontWeight="Bold" DockPanel.Dock="Left"
+                       VerticalAlignment="Center"/>
+            <Button Content="Refresh" Command="{Binding RefreshCommand}" DockPanel.Dock="Right"/>
+        </DockPanel>
+
+        <!-- Filters -->
+        <ItemsControl Grid.Row="1" ItemsSource="{Binding Filters}" Margin="12,0,12,4">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal"/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Content="{Binding}"
+                            Command="{Binding DataContext.SetFilterCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding}" Margin="2"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Job list -->
+        <ListView Grid.Row="2" ItemsSource="{Binding Jobs}" Margin="12,0,12,0">
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Header="Title" Width="240" DisplayMemberBinding="{Binding Title}"/>
+                    <GridViewColumn Header="Source" Width="140" DisplayMemberBinding="{Binding SourceName}"/>
+                    <GridViewColumn Header="Platform" Width="90" DisplayMemberBinding="{Binding Platform}"/>
+                    <GridViewColumn Header="State" Width="130" DisplayMemberBinding="{Binding StateText}"/>
+                    <GridViewColumn Header="Progress" Width="170">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <ProgressBar Value="{Binding ProgressPercent}" Minimum="0" Maximum="100"
+                                                 Width="100" Height="12" Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Speed" Width="90" DisplayMemberBinding="{Binding SpeedText}"/>
+                    <GridViewColumn Header="ETA" Width="80" DisplayMemberBinding="{Binding EtaText}"/>
+                    <GridViewColumn Header="Size" Width="150" DisplayMemberBinding="{Binding SizeText}"/>
+                    <GridViewColumn Header="Actions" Width="240">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Content="Pause" Command="{Binding DataContext.PauseJobCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}" Visibility="{Binding CanPause, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="Resume" Command="{Binding DataContext.ResumeJobCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}" Visibility="{Binding CanResume, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="Retry" Command="{Binding DataContext.RetryJobCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}" Visibility="{Binding CanRetry, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+            <ListView.Resources>
+                <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+            </ListView.Resources>
+        </ListView>
+
+        <StatusBar Grid.Row="3">
+            <StatusBarItem>
+                <TextBlock Text="{Binding StatusMessage}"/>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</UserControl>
