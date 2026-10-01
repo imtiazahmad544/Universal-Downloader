@@ -60,6 +60,23 @@ dotnet test tests\UniversalDownloader.Tests\UniversalDownloader.Tests.csproj
 Run the app from Visual Studio (set `UniversalDownloader.App` as startup project),
 or `dotnet run --project src\UniversalDownloader.App`.
 
+### Standalone UniversalDownloader.exe
+
+On any Windows PC with the .NET 8 SDK:
+
+```powershell
+cd client
+dotnet publish src\UniversalDownloader.App\UniversalDownloader.App.csproj `
+  -c Release -r win-x64 --self-contained `
+  -p:PublishSingleFile=true -p:AssemblyName=UniversalDownloader `
+  -o publish
+```
+
+This produces `publish\UniversalDownloader.exe` — a single file that runs
+without a .NET install. The same build runs automatically on GitHub Actions
+(`.github/workflows/build-windows.yml`): push the repo to GitHub and download
+the exe from the workflow run's Artifacts.
+
 For the signed MSIX installer, see [installer/README.md](installer/README.md).
 
 ## Configuration
