@@ -449,7 +449,7 @@ public sealed class DownloadWorker : IAsyncDisposable
         {
             finalPath = FileNamingTemplate.ResolveUniquePath(
                 _options.DestinationDirectory, _options.NamingTemplate,
-                MediaMetadata.FromJob(job));
+                FileNamingTemplate.FromJob(job));
         }
         catch (Exception ex)
         {
@@ -514,6 +514,7 @@ public sealed class DownloadWorker : IAsyncDisposable
                     try
                     {
                         read = await contentStream.ReadAsync(buffer, linked.Token)
+                            .AsTask()
                             .WaitAsync(_options.ReadTimeout, linked.Token).ConfigureAwait(false);
                     }
                     catch (TimeoutException)
@@ -610,7 +611,7 @@ public sealed class DownloadWorker : IAsyncDisposable
         {
             if (File.Exists(finalPath))
                 finalPath = FileNamingTemplate.ResolveUniquePath(
-                    _options.DestinationDirectory, _options.NamingTemplate, MediaMetadata.FromJob(job));
+                    _options.DestinationDirectory, _options.NamingTemplate, FileNamingTemplate.FromJob(job));
             File.Move(partPath, finalPath, overwrite: false);
         }
         catch (Exception ex)
