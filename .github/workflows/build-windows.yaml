@@ -27,7 +27,7 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore dependencies
-        run: dotnet restore client/UniversalDownloader.sln
+        run: dotnet restore client/UniversalDownloader.sln --runtime win-x64
 
       - name: Run tests
         run: dotnet test client/tests/UniversalDownloader.Tests/UniversalDownloader.Tests.csproj --configuration Release --no-restore
