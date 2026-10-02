@@ -40,7 +40,7 @@ public sealed class RetryPolicyTests
         for (int i = 0; i < 200; i++)
         {
             TimeSpan delay = RetryPolicy.ComputeDelay(3, baseDelay, maxDelay, rng);
-            Assert.InRange(delay.TotalMilliseconds, 40.0, 50.0);
+            Assert.InRange(delay.TotalMilliseconds, 40_000.0, 50_000.0);
         }
     }
 
