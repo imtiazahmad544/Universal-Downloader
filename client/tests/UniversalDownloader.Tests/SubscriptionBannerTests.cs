@@ -34,7 +34,7 @@ public sealed class SubscriptionBannerTests
     [InlineData(1)]
     public void Expiring_soon_within_three_days_shows_banner(int daysUntilExpiry)
     {
-        var sub = Sub(Now.AddDays(daysUntilExpiry).AddHours(1));
+        var sub = Sub(Now.AddDays(daysUntilExpiry).AddMinutes(-1));
         Assert.Equal(SubscriptionStatus.ExpiringSoon, sub.DeriveStatus(Now));
         Assert.True(sub.IsInWarningWindow(Now));
         Assert.True(sub.AllowsProtectedOperations(Now),
