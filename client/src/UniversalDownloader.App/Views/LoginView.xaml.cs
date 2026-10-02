@@ -4,7 +4,7 @@ using UniversalDownloader.App.ViewModels;
 
 namespace UniversalDownloader.App.Views;
 
-public partial class LoginView : UserControl
+public partial class LoginView : System.Windows.Controls.UserControl
 {
     public LoginViewModel ViewModel => (LoginViewModel)DataContext;
 

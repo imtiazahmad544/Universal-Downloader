@@ -3,6 +3,7 @@
 // and disposes infrastructure on exit.
 
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using UniversalDownloader.App.Services;
