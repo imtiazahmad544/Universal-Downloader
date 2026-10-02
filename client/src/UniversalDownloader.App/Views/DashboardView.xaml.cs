@@ -3,7 +3,7 @@ using UniversalDownloader.App.ViewModels;
 
 namespace UniversalDownloader.App.Views;
 
-public partial class DashboardView : UserControl
+public partial class DashboardView : System.Windows.Controls.UserControl
 {
     public DashboardViewModel ViewModel => (DashboardViewModel)DataContext;
 

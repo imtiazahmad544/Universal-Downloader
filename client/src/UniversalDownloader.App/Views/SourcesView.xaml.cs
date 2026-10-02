@@ -3,7 +3,7 @@ using UniversalDownloader.App.ViewModels;
 
 namespace UniversalDownloader.App.Views;
 
-public partial class SourcesView : UserControl
+public partial class SourcesView : System.Windows.Controls.UserControl
 {
     public SourcesViewModel ViewModel => (SourcesViewModel)DataContext;
 

@@ -3,7 +3,7 @@ using UniversalDownloader.App.ViewModels;
 
 namespace UniversalDownloader.App.Views;
 
-public partial class JobsView : UserControl
+public partial class JobsView : System.Windows.Controls.UserControl
 {
     public JobsViewModel ViewModel => (JobsViewModel)DataContext;
 
