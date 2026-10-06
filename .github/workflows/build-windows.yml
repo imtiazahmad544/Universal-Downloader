@@ -41,7 +41,8 @@ jobs:
           -c Release -r win-x64 --self-contained
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-          -p:AssemblyName=UniversalDownloader
+         - name: Rename exe to UniversalDownloader.exe
+           run: Rename-Item publish/UniversalDownloader.App.exe publish/UniversalDownloader.exe
           -o publish
 
       - name: Upload UniversalDownloader.exe
