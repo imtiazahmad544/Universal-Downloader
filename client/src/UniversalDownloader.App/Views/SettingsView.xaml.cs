@@ -1,15 +1,1 @@
-using System.Windows.Controls;
-using UniversalDownloader.App.ViewModels;
-
-namespace UniversalDownloader.App.Views;
-
-public partial class SettingsView : UserControl
-{
-    public SettingsViewModel ViewModel => (SettingsViewModel)DataContext;
-
-    public SettingsView(SettingsViewModel viewModel)
-    {
-        InitializeComponent();
-        DataContext = viewModel;
-    }
-}
+dXNpbmcgU3lzdGVtLldpbmRvd3MuQ29udHJvbHM7CnVzaW5nIFVuaXZlcnNhbERvd25sb2FkZXIuQXBwLlZpZXdNb2RlbHM7CgpuYW1lc3BhY2UgVW5pdmVyc2FsRG93bmxvYWRlci5BcHAuVmlld3M7CgpwdWJsaWMgcGFydGlhbCBjbGFzcyBTZXR0aW5nc1ZpZXcgOiBTeXN0ZW0uV2luZG93cy5Db250cm9scy5Vc2VyQ29udHJvbAp7CiAgICBwdWJsaWMgU2V0dGluZ3NWaWV3TW9kZWwgVmlld01vZGVsID0+IChTZXR0aW5nc1ZpZXdNb2RlbClEYXRhQ29udGV4dDsKCiAgICBwdWJsaWMgU2V0dGluZ3NWaWV3KFNldHRpbmdzVmlld01vZGVsIHZpZXdNb2RlbCkKICAgIHsKICAgICAgICBJbml0aWFsaXplQ29tcG9uZW50KCk7CiAgICAgICAgRGF0YUNvbnRleHQgPSB2aWV3TW9kZWw7CiAgICB9Cn0K
