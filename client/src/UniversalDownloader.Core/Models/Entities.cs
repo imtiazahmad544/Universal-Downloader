@@ -39,7 +39,10 @@ public sealed class Subscription
             return SubscriptionStatus.Disabled;
         if (ExpiresAt <= now)
             return SubscriptionStatus.Expired;
-        if (ExpiresAt <= now + WarningWindow)
+        // T-3 renewal banner (SRS FR-03/FR-13): calendar-day comparison so a
+        // subscription expiring "in 3 days" shows the banner for the whole
+        // third day, rather than cutting off at exactly 72 hours.
+        if (ExpiresAt.Date <= now.Date + WarningWindow)
             return SubscriptionStatus.ExpiringSoon;
         return SubscriptionStatus.Active;
     }
