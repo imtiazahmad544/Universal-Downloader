@@ -33,7 +33,21 @@ jobs:
         run: dotnet restore UniversalDownloader.sln
 
       - name: Test
-        run: dotnet test tests/UniversalDownloader.Tests/UniversalDownloader.Tests.csproj -c Release --no-restore
+        run: dotnet test tests/UniversalDownloader.Tests/UniversalDownloader.Tests.csproj -c Release --no-restore --logger "trx;LogFileName=test-results.trx"
+
+      - name: Report failed tests
+        if: failure()
+        shell: pwsh
+        run: |
+          $trx = Get-ChildItem -Recurse -Filter test-results.trx | Select-Object -First 1
+          if ($null -eq $trx) { Write-Host "::error::No trx file produced"; exit 0 }
+          [xml]$xml = Get-Content $trx.FullName
+          $failed = @($xml.TestRun.Results.UnitTestResult | Where-Object { $_.outcome -eq 'Failed' })
+          Write-Host "::error::$($failed.Count) test(s) failed"
+          foreach ($t in $failed) {
+            $msg = ($t.Output.ErrorInfo.Message | Out-String).Trim().Substring(0, [Math]::Min(500, ($t.Output.ErrorInfo.Message | Out-String).Trim().Length))
+            Write-Host "::error::FAILED TEST: $($t.testName) -- $msg"
+          }
 
       - name: Publish single-file exe
         run: >
@@ -41,9 +55,10 @@ jobs:
           -c Release -r win-x64 --self-contained
           -p:PublishSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
-         - name: Rename exe to UniversalDownloader.exe
-           run: Rename-Item publish/UniversalDownloader.App.exe publish/UniversalDownloader.exe
           -o publish
+
+      - name: Rename exe to UniversalDownloader.exe
+        run: Rename-Item publish/UniversalDownloader.App.exe publish/UniversalDownloader.exe
 
       - name: Upload UniversalDownloader.exe
         uses: actions/upload-artifact@v4
