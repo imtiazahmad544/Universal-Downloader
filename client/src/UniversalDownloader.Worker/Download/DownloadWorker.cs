@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
+using UniversalDownloader.Core.Cookies;
 using UniversalDownloader.Core.Models;
 using UniversalDownloader.Core.Naming;
 using UniversalDownloader.Core.StateMachine;
@@ -20,11 +21,22 @@ namespace UniversalDownloader.Worker.Download;
 /// <summary>Worker tunables.</summary>
 public sealed class WorkerOptions
 {
-    public int ConcurrencyLimit { get; init; } = 3;
+    /// <summary>
+    /// Max concurrent jobs (semaphore, fixed at worker start) and the segment
+    /// count for parallel downloads (v2.0: 1–5, read live per attempt).
+    /// </summary>
+    public int ConcurrencyLimit { get; set; } = 3;
     public string DestinationDirectory { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
         "Downloads", "UniversalDownloader");
     public string NamingTemplate { get; set; } = FileNamingTemplate.DefaultTemplate;
+
+    /// <summary>
+    /// v2.0: optional global Netscape cookies.txt; its cookies are sent on
+    /// download requests (bot-check fallback).
+    /// </summary>
+    public string? GlobalCookiesFilePath { get; set; }
+
     public TimeSpan BaseRetryDelay { get; init; } = TimeSpan.FromSeconds(2);
     public TimeSpan MaxRetryDelay { get; init; } = TimeSpan.FromMinutes(5);
     public TimeSpan ReadTimeout { get; init; } = TimeSpan.FromSeconds(60);
@@ -449,7 +461,7 @@ public sealed class DownloadWorker : IAsyncDisposable
         {
             finalPath = FileNamingTemplate.ResolveUniquePath(
                 _options.DestinationDirectory, _options.NamingTemplate,
-                FileNamingTemplate.FromJob(job));
+                MediaMetadata.FromJob(job));
         }
         catch (Exception ex)
         {
@@ -472,6 +484,19 @@ public sealed class DownloadWorker : IAsyncDisposable
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
             workerCt, exec.PauseCts.Token, exec.NetworkCts.Token);
 
+        string? cookieHeader = ResolveCookieHeader(job);
+
+        // v2.0: multi-connection segmented download for large files with Range
+        // support. Returns null when not eligible -> single-connection fallback.
+        if (offset == 0)
+        {
+            var segmented = await TrySegmentedDownloadAsync(
+                job, exec, partPath, finalPath, cookieHeader, workerCt, linked.Token)
+                .ConfigureAwait(false);
+            if (segmented is not null)
+                return segmented;
+        }
+
         // Up to two range attempts: the second restarts from zero if the
         // server does not honor Range requests.
         for (int rangeAttempt = 0; rangeAttempt < 2; rangeAttempt++)
@@ -481,6 +506,7 @@ public sealed class DownloadWorker : IAsyncDisposable
                 using var request = new HttpRequestMessage(HttpMethod.Get, job.MediaUrl);
                 if (offset > 0)
                     request.Headers.Range = new RangeHeaderValue(offset, null);
+                ApplyCookieHeader(request, cookieHeader);
 
                 using var response = await _http.SendAsync(
                     request, HttpCompletionOption.ResponseHeadersRead, linked.Token).ConfigureAwait(false);
@@ -590,6 +616,256 @@ public sealed class DownloadWorker : IAsyncDisposable
     }
 
     /// <summary>
+    /// v2.0: multi-connection segmented download ("3-5 downloaders"). Probes the
+    /// server with a 1-byte Range request; when it answers 206 with a known
+    /// length above the threshold, the file is split into N = ConcurrencyLimit
+    /// segments downloaded in parallel via Range requests into the .part file.
+    /// Each segment writes a disjoint region through its own FileStream, so no
+    /// locks are needed. Returns null when not eligible (caller falls back to
+    /// the single-connection path). Pause/cancel are honored across all segments.
+    /// </summary>
+    private async Task<AttemptOutcome?> TrySegmentedDownloadAsync(
+        DownloadJob job,
+        JobExecution exec,
+        string partPath,
+        string finalPath,
+        string? cookieHeader,
+        CancellationToken workerCt,
+        CancellationToken linkedToken)
+    {
+        int segmentCount = Math.Clamp(_options.ConcurrencyLimit, 2, 5);
+        if (segmentCount < 2)
+            return null;
+
+        long totalLength;
+        try
+        {
+            using var probe = new HttpRequestMessage(HttpMethod.Get, job.MediaUrl);
+            probe.Headers.Range = new RangeHeaderValue(0, 0);
+            ApplyCookieHeader(probe, cookieHeader);
+            using var probeResponse = await _http.SendAsync(
+                probe, HttpCompletionOption.ResponseHeadersRead, linkedToken).ConfigureAwait(false);
+            if (probeResponse.StatusCode != HttpStatusCode.PartialContent)
+                return null;
+            if (probeResponse.Headers.AcceptRanges.Count > 0 &&
+                !probeResponse.Headers.AcceptRanges.Any(
+                    v => v.Equals("bytes", StringComparison.OrdinalIgnoreCase)))
+                return null;
+            var probedTotal = probeResponse.Content.Headers.ContentRange?.Length;
+            if (!DownloadSegments.IsEligible(probedTotal, segmentCount))
+                return null;
+            totalLength = probedTotal!.Value;
+        }
+        catch (OperationCanceledException) when (exec.PauseCts.IsCancellationRequested)
+        {
+            // Pause during probe: same validated walk as the transfer path.
+            await TransitionAsync(job, JobState.RetryWait, workerCt).ConfigureAwait(false);
+            _resumeTargets[job.Id] = JobState.Ready;
+            await TransitionAsync(job, JobState.Ready, workerCt).ConfigureAwait(false);
+            await TransitionAsync(job, JobState.Paused, workerCt).ConfigureAwait(false);
+            return AttemptOutcome.Paused();
+        }
+        catch (OperationCanceledException) when (exec.NetworkCts.IsCancellationRequested || !_network.IsConnected)
+        {
+            return AttemptOutcome.NetworkLost();
+        }
+        catch (OperationCanceledException)
+        {
+            return AttemptOutcome.Stopping();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException)
+        {
+            return null; // probe failed -> single-connection fallback
+        }
+
+        job.TotalBytes = totalLength;
+        var segments = DownloadSegments.Compute(totalLength, segmentCount);
+        _log.Info($"Job {job.Id}: segmented download, {segmentCount} connections, {totalLength} bytes.");
+
+        try
+        {
+            // Pre-size the .part file; segments then write disjoint regions.
+            using var pre = new FileStream(partPath, FileMode.Create, FileAccess.Write,
+                FileShare.None, bufferSize: 81920, useAsync: true);
+            pre.SetLength(totalLength);
+        }
+        catch (Exception ex)
+        {
+            return AttemptOutcome.Transient($"Cannot prepare destination: {ex.Message}");
+        }
+
+        long downloaded = 0;
+        long windowBytes = 0;
+        var windowStart = DateTimeOffset.UtcNow;
+        var lastUiReport = DateTimeOffset.UtcNow;
+        object progressGate = new();
+
+        async Task OnSegmentBytesAsync(int n)
+        {
+            bool report;
+            long current;
+            double speed;
+            lock (progressGate)
+            {
+                downloaded += n;
+                windowBytes += n;
+                current = downloaded;
+                var now = DateTimeOffset.UtcNow;
+                report = (now - lastUiReport).TotalMilliseconds >= 250;
+                if (report)
+                {
+                    double windowSecs = (now - windowStart).TotalSeconds;
+                    speed = windowSecs > 0 ? windowBytes / windowSecs : 0;
+                    windowBytes = 0;
+                    windowStart = now;
+                    lastUiReport = now;
+                }
+                else
+                {
+                    speed = 0;
+                }
+            }
+            if (!report)
+                return;
+            job.BytesDownloaded = current;
+            job.Progress = Math.Min(1.0, (double)current / totalLength);
+            job.SpeedBytesPerSec = speed;
+            TimeSpan? eta = speed > 0
+                ? TimeSpan.FromSeconds(Math.Max(0, (totalLength - current) / speed))
+                : null;
+            ProgressChanged?.Invoke(this, new JobProgressEventArgs
+            {
+                JobId = job.Id,
+                Progress = job.Progress,
+                BytesDownloaded = current,
+                TotalBytes = totalLength,
+                SpeedBytesPerSec = speed,
+                Eta = eta,
+            });
+            await ReportAsync(job, force: false, workerCt).ConfigureAwait(false);
+        }
+
+        try
+        {
+            var tasks = segments.Select(seg => DownloadSegmentAsync(
+                job.MediaUrl, partPath, seg, cookieHeader, OnSegmentBytesAsync, linkedToken)).ToArray();
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (exec.PauseCts.IsCancellationRequested)
+        {
+            // Pause during download: DOWNLOADING -> RETRY_WAIT -> READY -> PAUSED.
+            // The .part file is kept; resume continues single-connection.
+            await TransitionAsync(job, JobState.RetryWait, workerCt).ConfigureAwait(false);
+            _resumeTargets[job.Id] = JobState.Ready;
+            await TransitionAsync(job, JobState.Ready, workerCt).ConfigureAwait(false);
+            await TransitionAsync(job, JobState.Paused, workerCt).ConfigureAwait(false);
+            return AttemptOutcome.Paused();
+        }
+        catch (OperationCanceledException) when (exec.NetworkCts.IsCancellationRequested || !_network.IsConnected)
+        {
+            return AttemptOutcome.NetworkLost();
+        }
+        catch (OperationCanceledException)
+        {
+            return AttemptOutcome.Stopping();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or IOException or TimeoutException)
+        {
+            return AttemptOutcome.Transient(ex.Message);
+        }
+
+        job.BytesDownloaded = totalLength;
+        job.Progress = 1.0;
+        return AttemptOutcome.TransferSucceeded(partPath, finalPath);
+    }
+
+    /// <summary>
+    /// Downloads one byte range into its region of the shared .part file.
+    /// Regions are disjoint, so concurrent segments never need locks.
+    /// </summary>
+    private async Task DownloadSegmentAsync(
+        string mediaUrl,
+        string partPath,
+        DownloadSegments.Segment segment,
+        string? cookieHeader,
+        Func<int, Task> onBytesAsync,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, mediaUrl);
+        request.Headers.Range = new RangeHeaderValue(segment.StartOffset, segment.EndOffsetInclusive);
+        ApplyCookieHeader(request, cookieHeader);
+
+        using var response = await _http.SendAsync(
+            request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (response.StatusCode != HttpStatusCode.PartialContent)
+            throw new IOException($"Server did not honor range request (HTTP {(int)response.StatusCode}).");
+        response.EnsureSuccessStatusCode();
+
+        using var contentStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        using var fileStream = new FileStream(partPath, FileMode.Open, FileAccess.Write,
+            FileShare.ReadWrite, bufferSize: 81920, useAsync: true);
+        fileStream.Seek(segment.StartOffset, SeekOrigin.Begin);
+
+        var buffer = new byte[81920];
+        long remaining = segment.Length;
+        while (remaining > 0)
+        {
+            int chunk = (int)Math.Min(buffer.Length, remaining);
+            int read;
+            try
+            {
+                read = await contentStream.ReadAsync(buffer.AsMemory(0, chunk), ct)
+                    .AsTask()
+                    .WaitAsync(_options.ReadTimeout, ct).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                throw new IOException(
+                    $"No data received for {_options.ReadTimeout.TotalSeconds:F0}s (read timeout).");
+            }
+            if (read == 0)
+                break;
+            await fileStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+            remaining -= read;
+            await onBytesAsync(read).ConfigureAwait(false);
+        }
+        if (remaining > 0)
+            throw new IOException("Segment stream ended before its range was complete.");
+        await fileStream.FlushAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the Cookie header for a download: an explicit per-job value
+    /// wins, otherwise the optional global cookies file. Cookie values never
+    /// come from the server (the API only exposes present-flags).
+    /// </summary>
+    private string? ResolveCookieHeader(DownloadJob job)
+    {
+        if (!string.IsNullOrWhiteSpace(job.CookieHeader))
+            return job.CookieHeader;
+        var path = _options.GlobalCookiesFilePath;
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return null;
+        try
+        {
+            if (!Uri.TryCreate(job.MediaUrl, UriKind.Absolute, out var uri))
+                return null;
+            return CookieJar.Load(path).BuildHeader(uri);
+        }
+        catch (Exception ex)
+        {
+            _log.Warn($"Could not build Cookie header from '{path}': {ex.Message}");
+            return null;
+        }
+    }
+
+    private static void ApplyCookieHeader(HttpRequestMessage request, string? cookieHeader)
+    {
+        if (!string.IsNullOrWhiteSpace(cookieHeader))
+            request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
+    }
+
+    /// <summary>
     /// Verifies the transfer (checksum when the server provided one, else
     /// size/existence) and finalizes the file. Returns true when completed.
     /// </summary>
@@ -611,7 +887,7 @@ public sealed class DownloadWorker : IAsyncDisposable
         {
             if (File.Exists(finalPath))
                 finalPath = FileNamingTemplate.ResolveUniquePath(
-                    _options.DestinationDirectory, _options.NamingTemplate, FileNamingTemplate.FromJob(job));
+                    _options.DestinationDirectory, _options.NamingTemplate, MediaMetadata.FromJob(job));
             File.Move(partPath, finalPath, overwrite: false);
         }
         catch (Exception ex)

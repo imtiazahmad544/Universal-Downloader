@@ -16,6 +16,21 @@ public sealed class MediaMetadata
     public required string Title { get; init; }
     public required string MediaId { get; init; }
     public required string Extension { get; init; }
+
+    /// <summary>Builds <see cref="MediaMetadata"/> from a download job.</summary>
+    public static MediaMetadata FromJob(DownloadJob job)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        return new()
+        {
+            Platform = job.Platform,
+            SourceName = job.SourceName,
+            Date = job.MediaDate,
+            Title = string.IsNullOrWhiteSpace(job.Title) ? job.MediaItemId.ToString("N") : job.Title,
+            MediaId = job.MediaItemId.ToString("N"),
+            Extension = job.FileExtension,
+        };
+    }
 }
 
 /// <summary>
@@ -82,17 +97,6 @@ public static class FileNamingTemplate
                 return candidate;
         }
     }
-
-    /// <summary>Builds <see cref="MediaMetadata"/> from a download job.</summary>
-    public static MediaMetadata FromJob(DownloadJob job) => new()
-    {
-        Platform = job.Platform,
-        SourceName = job.SourceName,
-        Date = job.MediaDate,
-        Title = string.IsNullOrWhiteSpace(job.Title) ? job.MediaItemId.ToString("N") : job.Title,
-        MediaId = job.MediaItemId.ToString("N"),
-        Extension = job.FileExtension,
-    };
 
     private static string SanitizeSegment(string value)
     {

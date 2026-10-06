@@ -69,18 +69,43 @@ public sealed class LocalCache : IAsyncDisposable
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+
+        // v2.0 columns: added idempotently so existing cache.db files migrate.
+        await EnsureColumnAsync("sources", "has_cookies", "INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
+        await EnsureColumnAsync("jobs", "captcha_required", "INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
+        await EnsureColumnAsync("jobs", "source_id", "INTEGER NOT NULL DEFAULT 0")
+            .ConfigureAwait(false);
+    }
+
+    private async Task EnsureColumnAsync(string table, string column, string definition)
+    {
+        // Table/column names are fixed literals from code (never user input).
+        using var probe = _connection.CreateCommand();
+        probe.CommandText = $"PRAGMA table_info({table});";
+        using var reader = await probe.ExecuteReaderAsync().ConfigureAwait(false);
+        while (await reader.ReadAsync().ConfigureAwait(false))
+        {
+            if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        using var alter = _connection.CreateCommand();
+        alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+        await alter.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     public async Task UpsertSourcesAsync(IEnumerable<Source> sources, CancellationToken ct = default)
     {
         const string sql = """
-            INSERT INTO sources (id, customer_id, platform, input_value, canonical_id, status, updated_at)
-            VALUES ($id, $customer_id, $platform, $input_value, $canonical_id, $status, $updated_at)
+            INSERT INTO sources (id, customer_id, platform, input_value, canonical_id, status, has_cookies, updated_at)
+            VALUES ($id, $customer_id, $platform, $input_value, $canonical_id, $status, $has_cookies, $updated_at)
             ON CONFLICT(id) DO UPDATE SET
                 platform = excluded.platform,
                 input_value = excluded.input_value,
                 canonical_id = excluded.canonical_id,
                 status = excluded.status,
+                has_cookies = excluded.has_cookies,
                 updated_at = excluded.updated_at;
             """;
         using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -95,6 +120,7 @@ public sealed class LocalCache : IAsyncDisposable
             cmd.Parameters.AddWithValue("$input_value", s.InputValue);
             cmd.Parameters.AddWithValue("$canonical_id", s.CanonicalId);
             cmd.Parameters.AddWithValue("$status", (int)s.Status);
+            cmd.Parameters.AddWithValue("$has_cookies", s.HasCookies ? 1 : 0);
             cmd.Parameters.AddWithValue("$updated_at", s.UpdatedAt.ToString("O"));
             await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
@@ -103,7 +129,7 @@ public sealed class LocalCache : IAsyncDisposable
 
     public async Task<IReadOnlyList<Source>> GetSourcesAsync(CancellationToken ct = default)
     {
-        const string sql = "SELECT id, customer_id, platform, input_value, canonical_id, status, updated_at FROM sources;";
+        const string sql = "SELECT id, customer_id, platform, input_value, canonical_id, status, has_cookies, updated_at FROM sources;";
         var list = new List<Source>();
         using var cmd = _connection.CreateCommand();
         cmd.CommandText = sql;
@@ -118,7 +144,8 @@ public sealed class LocalCache : IAsyncDisposable
                 InputValue = reader.GetString(3),
                 CanonicalId = reader.GetString(4),
                 Status = (SourceStatus)reader.GetInt32(5),
-                UpdatedAt = DateTimeOffset.Parse(reader.GetString(6)),
+                HasCookies = reader.GetInt32(6) != 0,
+                UpdatedAt = DateTimeOffset.Parse(reader.GetString(7)),
             });
         }
         return list;
@@ -129,10 +156,10 @@ public sealed class LocalCache : IAsyncDisposable
         const string sql = """
             INSERT INTO jobs (id, customer_id, media_item_id, batch_id, state, attempts, provider,
                               progress, bytes_downloaded, total_bytes, title, platform, source_name,
-                              media_url, checksum_sha256, error_message, updated_at)
+                              media_url, checksum_sha256, error_message, captcha_required, source_id, updated_at)
             VALUES ($id, $customer_id, $media_item_id, $batch_id, $state, $attempts, $provider,
                     $progress, $bytes_downloaded, $total_bytes, $title, $platform, $source_name,
-                    $media_url, $checksum_sha256, $error_message, $updated_at)
+                    $media_url, $checksum_sha256, $error_message, $captcha_required, $source_id, $updated_at)
             ON CONFLICT(id) DO UPDATE SET
                 batch_id = excluded.batch_id,
                 state = excluded.state,
@@ -147,6 +174,8 @@ public sealed class LocalCache : IAsyncDisposable
                 media_url = excluded.media_url,
                 checksum_sha256 = excluded.checksum_sha256,
                 error_message = excluded.error_message,
+                captcha_required = excluded.captcha_required,
+                source_id = excluded.source_id,
                 updated_at = excluded.updated_at;
             """;
         using var tx = (SqliteTransaction)await _connection.BeginTransactionAsync(ct).ConfigureAwait(false);
@@ -169,7 +198,7 @@ public sealed class LocalCache : IAsyncDisposable
         const string sql = """
             SELECT id, customer_id, media_item_id, batch_id, state, attempts, provider,
                    progress, bytes_downloaded, total_bytes, title, platform, source_name,
-                   media_url, checksum_sha256, error_message, updated_at
+                   media_url, checksum_sha256, error_message, captcha_required, source_id, updated_at
             FROM jobs;
             """;
         var list = new List<DownloadJob>();
@@ -186,7 +215,7 @@ public sealed class LocalCache : IAsyncDisposable
         const string sql = """
             SELECT id, customer_id, media_item_id, batch_id, state, attempts, provider,
                    progress, bytes_downloaded, total_bytes, title, platform, source_name,
-                   media_url, checksum_sha256, error_message, updated_at
+                   media_url, checksum_sha256, error_message, captcha_required, source_id, updated_at
             FROM jobs WHERE id = $id;
             """;
         using var cmd = _connection.CreateCommand();
@@ -221,6 +250,8 @@ public sealed class LocalCache : IAsyncDisposable
         cmd.Parameters.AddWithValue("$media_url", j.MediaUrl);
         cmd.Parameters.AddWithValue("$checksum_sha256", (object?)j.ChecksumSha256 ?? DBNull.Value);
         cmd.Parameters.AddWithValue("$error_message", (object?)j.ErrorMessage ?? DBNull.Value);
+        cmd.Parameters.AddWithValue("$captcha_required", j.CaptchaRequired ? 1 : 0);
+        cmd.Parameters.AddWithValue("$source_id", j.SourceId);
         cmd.Parameters.AddWithValue("$updated_at", j.UpdatedAt.ToString("O"));
     }
 
@@ -246,7 +277,9 @@ public sealed class LocalCache : IAsyncDisposable
             MediaUrl = r.GetString(13),
             ChecksumSha256 = Str(14),
             ErrorMessage = Str(15),
-            UpdatedAt = DateTimeOffset.Parse(r.GetString(16)),
+            CaptchaRequired = r.GetInt32(16) != 0,
+            SourceId = r.GetInt32(17),
+            UpdatedAt = DateTimeOffset.Parse(r.GetString(18)),
         };
     }
 

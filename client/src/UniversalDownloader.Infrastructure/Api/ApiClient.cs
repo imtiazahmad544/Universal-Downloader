@@ -3,6 +3,7 @@
 // PATCH /api/v1/jobs/{id}/status for client progress/state/completion reporting.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using UniversalDownloader.Core.Models;
@@ -42,6 +43,30 @@ public interface IApiClient
     Task ReportJobStatusAsync(int id, JobStatusReport report, CancellationToken ct = default);
 
     Task<IReadOnlyList<BatchDto>> ListBatchesAsync(CancellationToken ct = default);
+
+    /// <summary>v2.0: syncs the daily batch start time ("HH:MM").</summary>
+    Task SyncStartTimeToServerAsync(string dailyStartTime, CancellationToken ct = default);
+
+    /// <summary>v2.0: uploads a cookies.txt for a source (multipart, field "file").</summary>
+    Task UploadSourceCookiesAsync(int sourceId, string filePath, CancellationToken ct = default);
+
+    /// <summary>v2.0: clears a source's server-side cookies.</summary>
+    Task DeleteSourceCookiesAsync(int sourceId, CancellationToken ct = default);
+
+    /// <summary>v2.0: presence-only flag for a source's server-side cookies.</summary>
+    Task<CookiesStatusDto> GetSourceCookiesStatusAsync(int sourceId, CancellationToken ct = default);
+
+    /// <summary>v2.0: uploads the customer's global cookies.txt (multipart, field "file").</summary>
+    Task UploadMyCookiesAsync(string filePath, CancellationToken ct = default);
+
+    /// <summary>v2.0: clears the customer's global server-side cookies.</summary>
+    Task DeleteMyCookiesAsync(CancellationToken ct = default);
+
+    /// <summary>v2.0: presence-only flag for the customer's global server-side cookies.</summary>
+    Task<CookiesStatusDto> GetMyCookiesStatusAsync(CancellationToken ct = default);
+
+    /// <summary>v2.0: tests the link extractor against a URL.</summary>
+    Task<ExtractResultDto?> ExtractAsync(string url, CancellationToken ct = default);
 }
 
 /// <summary>HttpClient-based implementation. Authentication headers are attached by
@@ -107,6 +132,82 @@ public sealed class ApiClient : IApiClient
 
     public Task<IReadOnlyList<BatchDto>> ListBatchesAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<BatchDto>>("/api/v1/batches", ct);
+
+    public async Task SyncStartTimeToServerAsync(string dailyStartTime, CancellationToken ct = default)
+    {
+        using var response = await _http.PatchAsJsonAsync("/api/v1/me/settings",
+            new UpdateMySettingsRequest(dailyStartTime), _json, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        // Response body (if any) intentionally ignored: local settings stay
+        // the source of truth on the client.
+    }
+
+    public async Task UploadSourceCookiesAsync(int sourceId, string filePath, CancellationToken ct = default)
+    {
+        using var content = BuildCookiesMultipart(filePath);
+        using var response = await _http.PutAsync($"/api/v1/sources/{sourceId}/cookies", content, ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public async Task DeleteSourceCookiesAsync(int sourceId, CancellationToken ct = default)
+    {
+        using var response = await _http.DeleteAsync($"/api/v1/sources/{sourceId}/cookies", ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public Task<CookiesStatusDto> GetSourceCookiesStatusAsync(int sourceId, CancellationToken ct = default) =>
+        GetAsync<CookiesStatusDto>($"/api/v1/sources/{sourceId}/cookies", ct);
+
+    public async Task UploadMyCookiesAsync(string filePath, CancellationToken ct = default)
+    {
+        using var content = BuildCookiesMultipart(filePath);
+        using var response = await _http.PutAsync("/api/v1/me/cookies", content, ct)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public async Task DeleteMyCookiesAsync(CancellationToken ct = default)
+    {
+        using var response = await _http.DeleteAsync("/api/v1/me/cookies", ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public Task<CookiesStatusDto> GetMyCookiesStatusAsync(CancellationToken ct = default) =>
+        GetAsync<CookiesStatusDto>("/api/v1/me/cookies", ct);
+
+    public async Task<ExtractResultDto?> ExtractAsync(string url, CancellationToken ct = default)
+    {
+        using var response = await _http.PostAsJsonAsync("/api/v1/extract",
+            new ExtractRequest(url), _json, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(body))
+            return null;
+        return JsonSerializer.Deserialize<ExtractResultDto>(body, _json);
+    }
+
+    /// <summary>Builds the multipart body for cookies.txt uploads (field "file").</summary>
+    private static MultipartFormDataContent BuildCookiesMultipart(string filePath)
+    {
+        if (!File.Exists(filePath))
+            throw new ArgumentException($"Cookies file not found: {filePath}", nameof(filePath));
+        var content = new MultipartFormDataContent();
+        try
+        {
+            var stream = File.OpenRead(filePath);
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            content.Add(fileContent, "file", Path.GetFileName(filePath));
+            return content;
+        }
+        catch
+        {
+            content.Dispose();
+            throw;
+        }
+    }
 
     private async Task<T> GetAsync<T>(string path, CancellationToken ct)
     {
@@ -217,6 +318,7 @@ public static class DtoMapper
         CanonicalId = d.CanonicalId,
         Status = string.Equals(d.Status, "paused", StringComparison.OrdinalIgnoreCase)
             ? SourceStatus.Paused : SourceStatus.Active,
+        HasCookies = d.HasCookies,
         CreatedAt = AsUtc(d.CreatedAt),
         UpdatedAt = AsUtc(d.UpdatedAt),
     };
@@ -247,6 +349,8 @@ public static class DtoMapper
             BytesDownloaded = d.BytesDownloaded,
             TotalBytes = d.TotalBytes,
             ErrorMessage = d.ErrorMessage,
+            CaptchaRequired = d.CaptchaRequired,
+            SourceId = media?.SourceId ?? 0,
             Title = media?.Title ?? string.Empty,
             Platform = media is null ? Platform.YouTube : ParsePlatform(media.Platform),
             // Optional in the API payload; falls back to "untitled" in naming.
