@@ -58,7 +58,7 @@ jobs:
           -o publish
 
       - name: Rename exe to UniversalDownloader.exe
-        run: Rename-Item publish/UniversalDownloader.App.exe publish/UniversalDownloader.exe
+        run: Move-Item publish/UniversalDownloader.App.exe publish/UniversalDownloader.exe
 
       - name: Upload UniversalDownloader.exe
         uses: actions/upload-artifact@v4
