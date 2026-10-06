@@ -1,1 +1,15 @@
-dXNpbmcgU3lzdGVtLldpbmRvd3MuQ29udHJvbHM7CnVzaW5nIFVuaXZlcnNhbERvd25sb2FkZXIuQXBwLlZpZXdNb2RlbHM7CgpuYW1lc3BhY2UgVW5pdmVyc2FsRG93bmxvYWRlci5BcHAuVmlld3M7CgpwdWJsaWMgcGFydGlhbCBjbGFzcyBKb2JzVmlldyA6IFN5c3RlbS5XaW5kb3dzLkNvbnRyb2xzLlVzZXJDb250cm9sCnsKICAgIHB1YmxpYyBKb2JzVmlld01vZGVsIFZpZXdNb2RlbCA9PiAoSm9ic1ZpZXdNb2RlbClEYXRhQ29udGV4dDsKCiAgICBwdWJsaWMgSm9ic1ZpZXcoSm9ic1ZpZXdNb2RlbCB2aWV3TW9kZWwpCiAgICB7CiAgICAgICAgSW5pdGlhbGl6ZUNvbXBvbmVudCgpOwogICAgICAgIERhdGFDb250ZXh0ID0gdmlld01vZGVsOwogICAgfQp9Cg==
+using System.Windows.Controls;
+using UniversalDownloader.App.ViewModels;
+
+namespace UniversalDownloader.App.Views;
+
+public partial class JobsView : System.Windows.Controls.UserControl
+{
+    public JobsViewModel ViewModel => (JobsViewModel)DataContext;
+
+    public JobsView(JobsViewModel viewModel)
+    {
+        InitializeComponent();
+        DataContext = viewModel;
+    }
+}

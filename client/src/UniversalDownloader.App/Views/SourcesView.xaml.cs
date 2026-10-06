@@ -1,1 +1,15 @@
-dXNpbmcgU3lzdGVtLldpbmRvd3MuQ29udHJvbHM7CnVzaW5nIFVuaXZlcnNhbERvd25sb2FkZXIuQXBwLlZpZXdNb2RlbHM7CgpuYW1lc3BhY2UgVW5pdmVyc2FsRG93bmxvYWRlci5BcHAuVmlld3M7CgpwdWJsaWMgcGFydGlhbCBjbGFzcyBTb3VyY2VzVmlldyA6IFN5c3RlbS5XaW5kb3dzLkNvbnRyb2xzLlVzZXJDb250cm9sCnsKICAgIHB1YmxpYyBTb3VyY2VzVmlld01vZGVsIFZpZXdNb2RlbCA9PiAoU291cmNlc1ZpZXdNb2RlbClEYXRhQ29udGV4dDsKCiAgICBwdWJsaWMgU291cmNlc1ZpZXcoU291cmNlc1ZpZXdNb2RlbCB2aWV3TW9kZWwpCiAgICB7CiAgICAgICAgSW5pdGlhbGl6ZUNvbXBvbmVudCgpOwogICAgICAgIERhdGFDb250ZXh0ID0gdmlld01vZGVsOwogICAgfQp9Cg==
+using System.Windows.Controls;
+using UniversalDownloader.App.ViewModels;
+
+namespace UniversalDownloader.App.Views;
+
+public partial class SourcesView : System.Windows.Controls.UserControl
+{
+    public SourcesViewModel ViewModel => (SourcesViewModel)DataContext;
+
+    public SourcesView(SourcesViewModel viewModel)
+    {
+        InitializeComponent();
+        DataContext = viewModel;
+    }
+}

@@ -1,1 +1,30 @@
-dXNpbmcgU3lzdGVtLldpbmRvd3M7CnVzaW5nIFN5c3RlbS5XaW5kb3dzLkNvbnRyb2xzOwp1c2luZyBVbml2ZXJzYWxEb3dubG9hZGVyLkFwcC5WaWV3TW9kZWxzOwoKbmFtZXNwYWNlIFVuaXZlcnNhbERvd25sb2FkZXIuQXBwLlZpZXdzOwoKcHVibGljIHBhcnRpYWwgY2xhc3MgTG9naW5WaWV3IDogU3lzdGVtLldpbmRvd3MuQ29udHJvbHMuVXNlckNvbnRyb2wKewogICAgcHVibGljIExvZ2luVmlld01vZGVsIFZpZXdNb2RlbCA9PiAoTG9naW5WaWV3TW9kZWwpRGF0YUNvbnRleHQ7CgogICAgcHVibGljIExvZ2luVmlldyhMb2dpblZpZXdNb2RlbCB2aWV3TW9kZWwpCiAgICB7CiAgICAgICAgSW5pdGlhbGl6ZUNvbXBvbmVudCgpOwogICAgICAgIERhdGFDb250ZXh0ID0gdmlld01vZGVsOwogICAgfQoKICAgIHByaXZhdGUgYXN5bmMgdm9pZCBMb2dpbkJ1dHRvbl9DbGljayhvYmplY3Qgc2VuZGVyLCBSb3V0ZWRFdmVudEFyZ3MgZSkKICAgIHsKICAgICAgICBzdHJpbmcgcGFzc3dvcmQgPSBQYXNzd29yZEJveC5QYXNzd29yZDsKICAgICAgICB0cnkKICAgICAgICB7CiAgICAgICAgICAgIGF3YWl0IFZpZXdNb2RlbC5Mb2dpbkFzeW5jKHBhc3N3b3JkKS5Db25maWd1cmVBd2FpdCh0cnVlKTsKICAgICAgICB9CiAgICAgICAgZmluYWxseQogICAgICAgIHsKICAgICAgICAgICAgUGFzc3dvcmRCb3guQ2xlYXIoKTsKICAgICAgICAgICAgcGFzc3dvcmQgPSBzdHJpbmcuRW1wdHk7CiAgICAgICAgfQogICAgfQp9Cg==
+using System.Windows;
+using System.Windows.Controls;
+using UniversalDownloader.App.ViewModels;
+
+namespace UniversalDownloader.App.Views;
+
+public partial class LoginView : System.Windows.Controls.UserControl
+{
+    public LoginViewModel ViewModel => (LoginViewModel)DataContext;
+
+    public LoginView(LoginViewModel viewModel)
+    {
+        InitializeComponent();
+        DataContext = viewModel;
+    }
+
+    private async void LoginButton_Click(object sender, RoutedEventArgs e)
+    {
+        string password = PasswordBox.Password;
+        try
+        {
+            await ViewModel.LoginAsync(password).ConfigureAwait(true);
+        }
+        finally
+        {
+            PasswordBox.Clear();
+            password = string.Empty;
+        }
+    }
+}

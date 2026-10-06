@@ -1,1 +1,15 @@
-dXNpbmcgU3lzdGVtLldpbmRvd3MuQ29udHJvbHM7CnVzaW5nIFVuaXZlcnNhbERvd25sb2FkZXIuQXBwLlZpZXdNb2RlbHM7CgpuYW1lc3BhY2UgVW5pdmVyc2FsRG93bmxvYWRlci5BcHAuVmlld3M7CgpwdWJsaWMgcGFydGlhbCBjbGFzcyBEYXNoYm9hcmRWaWV3IDogU3lzdGVtLldpbmRvd3MuQ29udHJvbHMuVXNlckNvbnRyb2wKewogICAgcHVibGljIERhc2hib2FyZFZpZXdNb2RlbCBWaWV3TW9kZWwgPT4gKERhc2hib2FyZFZpZXdNb2RlbClEYXRhQ29udGV4dDsKCiAgICBwdWJsaWMgRGFzaGJvYXJkVmlldyhEYXNoYm9hcmRWaWV3TW9kZWwgdmlld01vZGVsKQogICAgewogICAgICAgIEluaXRpYWxpemVDb21wb25lbnQoKTsKICAgICAgICBEYXRhQ29udGV4dCA9IHZpZXdNb2RlbDsKICAgIH0KfQo=
+using System.Windows.Controls;
+using UniversalDownloader.App.ViewModels;
+
+namespace UniversalDownloader.App.Views;
+
+public partial class DashboardView : System.Windows.Controls.UserControl
+{
+    public DashboardViewModel ViewModel => (DashboardViewModel)DataContext;
+
+    public DashboardView(DashboardViewModel viewModel)
+    {
+        InitializeComponent();
+        DataContext = viewModel;
+    }
+}
