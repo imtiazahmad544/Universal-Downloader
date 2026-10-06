@@ -1,8 +1,12 @@
 <UserControl x:Class="UniversalDownloader.App.Views.JobsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
     <Grid Background="#F9FAFB">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -15,8 +19,19 @@
             <Button Content="Refresh" Command="{Binding RefreshCommand}" DockPanel.Dock="Right"/>
         </DockPanel>
 
+        <!-- v2.0: bot-check banner -->
+        <Border Grid.Row="1" Background="{StaticResource WarningBackgroundBrush}" BorderBrush="{StaticResource WarningBrush}"
+                BorderThickness="1" CornerRadius="6" Padding="10" Margin="12,0,12,4"
+                Visibility="{Binding ShowCaptchaBanner, Converter={StaticResource BoolToVis}}">
+            <DockPanel LastChildFill="False">
+                <TextBlock Text="{Binding CaptchaBannerText}" TextWrapping="Wrap" VerticalAlignment="Center"
+                           Foreground="{StaticResource WarningBrush}" FontWeight="SemiBold" DockPanel.Dock="Left"/>
+                <Button Content="Provide cookies…" Command="{Binding ProvideCookiesCommand}" DockPanel.Dock="Right"/>
+            </DockPanel>
+        </Border>
+
         <!-- Filters -->
-        <ItemsControl Grid.Row="1" ItemsSource="{Binding Filters}" Margin="12,0,12,4">
+        <ItemsControl Grid.Row="2" ItemsSource="{Binding Filters}" Margin="12,0,12,4">
             <ItemsControl.ItemsPanel>
                 <ItemsPanelTemplate>
                     <StackPanel Orientation="Horizontal"/>
@@ -32,7 +47,7 @@
         </ItemsControl>
 
         <!-- Job list -->
-        <ListView Grid.Row="2" ItemsSource="{Binding Jobs}" Margin="12,0,12,0">
+        <ListView Grid.Row="3" ItemsSource="{Binding Jobs}" Margin="12,0,12,0">
             <ListView.View>
                 <GridView>
                     <GridViewColumn Header="Title" Width="240" DisplayMemberBinding="{Binding Title}"/>
@@ -53,7 +68,7 @@
                     <GridViewColumn Header="Speed" Width="90" DisplayMemberBinding="{Binding SpeedText}"/>
                     <GridViewColumn Header="ETA" Width="80" DisplayMemberBinding="{Binding EtaText}"/>
                     <GridViewColumn Header="Size" Width="150" DisplayMemberBinding="{Binding SizeText}"/>
-                    <GridViewColumn Header="Actions" Width="240">
+                    <GridViewColumn Header="Actions" Width="300">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -63,6 +78,8 @@
                                             CommandParameter="{Binding}" Visibility="{Binding CanResume, Converter={StaticResource BoolToVis}}"/>
                                     <Button Content="Retry" Command="{Binding DataContext.RetryJobCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
                                             CommandParameter="{Binding}" Visibility="{Binding CanRetry, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="Cookies…" Command="{Binding DataContext.ProvideCookiesCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}" Visibility="{Binding CanProvideCookies, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                             </DataTemplate>
                         </GridViewColumn.CellTemplate>
@@ -74,7 +91,7 @@
             </ListView.Resources>
         </ListView>
 
-        <StatusBar Grid.Row="3">
+        <StatusBar Grid.Row="4">
             <StatusBarItem>
                 <TextBlock Text="{Binding StatusMessage}"/>
             </StatusBarItem>

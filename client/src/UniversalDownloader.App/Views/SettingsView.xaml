@@ -22,8 +22,24 @@
             <TextBlock Text="Batch length (videos per daily batch)" FontWeight="SemiBold" Margin="6,0,6,0"/>
             <TextBox Text="{Binding BatchLength, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="120" HorizontalAlignment="Left"/>
 
-            <TextBlock Text="Concurrency limit (applies after restart)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBlock Text="Concurrency limit (1–5 parallel downloaders; job slots apply after restart)" FontWeight="SemiBold" Margin="6,0,6,0"/>
             <TextBox Text="{Binding ConcurrencyLimit, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="120" HorizontalAlignment="Left"/>
+
+            <TextBlock Text="Daily start time (HH:MM, 24-hour — synced to server)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <TextBox Text="{Binding DailyStartTime, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="120" HorizontalAlignment="Left"/>
+
+            <TextBlock Text="Global cookies file (optional, Netscape cookies.txt)" FontWeight="SemiBold" Margin="6,0,6,0"/>
+            <DockPanel LastChildFill="True" Margin="6,0,6,2">
+                <Button Content="Browse..." Command="{Binding BrowseCookiesCommand}" DockPanel.Dock="Right"/>
+                <TextBox Text="{Binding GlobalCookiesFilePath, UpdateSourceTrigger=PropertyChanged}"/>
+            </DockPanel>
+            <StackPanel Orientation="Horizontal" Margin="6,0,6,8" VerticalAlignment="Center">
+                <Button Content="Upload to server" Command="{Binding UploadGlobalCookiesCommand}"/>
+                <Button Content="Clear server cookies" Command="{Binding ClearGlobalCookiesCommand}"/>
+                <TextBlock Text="Server has cookies" VerticalAlignment="Center" Margin="8,0,0,0"
+                           FontSize="11" Foreground="{StaticResource SuccessBrush}"
+                           Visibility="{Binding HasServerCookies, Converter={StaticResource BoolToVis}}"/>
+            </StackPanel>
 
             <TextBlock Text="Timezone (IANA id, used for batch activation)" FontWeight="SemiBold" Margin="6,0,6,0"/>
             <TextBox Text="{Binding TimezoneId, UpdateSourceTrigger=PropertyChanged}" Margin="6,0,6,8" Width="240" HorizontalAlignment="Left"/>

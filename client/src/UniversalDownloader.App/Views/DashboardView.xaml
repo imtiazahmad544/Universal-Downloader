@@ -28,6 +28,14 @@
                            Foreground="{StaticResource DangerBrush}" FontWeight="SemiBold"/>
             </Border>
 
+            <!-- v2.0: bot-check banner -->
+            <Border Background="{StaticResource WarningBackgroundBrush}" BorderBrush="{StaticResource WarningBrush}"
+                    BorderThickness="1" CornerRadius="6" Padding="12" Margin="6"
+                    Visibility="{Binding ShowCaptchaBanner, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="{Binding CaptchaBannerText}" TextWrapping="Wrap"
+                           Foreground="{StaticResource WarningBrush}" FontWeight="SemiBold"/>
+            </Border>
+
             <UniformGrid Columns="3">
                 <Border Style="{StaticResource CardBorder}">
                     <StackPanel>
@@ -77,6 +85,19 @@
                     <TextBlock Text="{Binding TodayBatchText}" TextWrapping="Wrap"/>
                     <TextBlock Text="{Binding UpcomingBatchText}" TextWrapping="Wrap"
                                Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+
+            <!-- v2.0: link-extractor test -->
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel>
+                    <TextBlock Text="TEST LINK EXTRACTOR" Style="{StaticResource CardTitle}"/>
+                    <DockPanel LastChildFill="True" Margin="0,4,0,4">
+                        <Button Content="Test" Command="{Binding TestExtractCommand}" DockPanel.Dock="Right" Margin="4,0,0,0"/>
+                        <TextBox Text="{Binding TestUrl, UpdateSourceTrigger=PropertyChanged}" VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <TextBlock Text="{Binding ExtractResultText}" TextWrapping="Wrap" FontSize="12"
+                               Visibility="{Binding HasExtractResult, Converter={StaticResource BoolToVis}}"/>
                 </StackPanel>
             </Border>
 

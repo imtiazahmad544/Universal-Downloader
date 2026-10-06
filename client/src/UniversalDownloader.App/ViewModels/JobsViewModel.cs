@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 using UniversalDownloader.Core.Models;
 using UniversalDownloader.Infrastructure.Api;
 using UniversalDownloader.Infrastructure.Cache;
@@ -23,6 +24,8 @@ public sealed partial class JobRowViewModel : ObservableObject
     [ObservableProperty] private double _speedBytesPerSec;
     [ObservableProperty] private TimeSpan? _eta;
     [ObservableProperty] private string? _errorMessage;
+    [ObservableProperty] private bool _captchaRequired;
+    [ObservableProperty] private int _sourceId;
 
     public string StateText => State.ToString();
     public double ProgressPercent => Progress * 100.0;
@@ -38,6 +41,9 @@ public sealed partial class JobRowViewModel : ObservableObject
         or JobState.Queued or JobState.Batched;
     public bool CanResume => State == JobState.Paused;
     public bool CanRetry => State == JobState.Failed;
+
+    /// <summary>v2.0: job is blocked by a bot check and needs cookies.</summary>
+    public bool CanProvideCookies => CaptchaRequired;
 
     public JobRowViewModel(DownloadJob job)
     {
@@ -56,6 +62,8 @@ public sealed partial class JobRowViewModel : ObservableObject
         TotalBytes = job.TotalBytes;
         SpeedBytesPerSec = job.SpeedBytesPerSec;
         ErrorMessage = job.ErrorMessage;
+        CaptchaRequired = job.CaptchaRequired;
+        SourceId = job.SourceId;
         RefreshDerived();
     }
 
@@ -80,6 +88,7 @@ public sealed partial class JobRowViewModel : ObservableObject
         OnPropertyChanged(nameof(CanPause));
         OnPropertyChanged(nameof(CanResume));
         OnPropertyChanged(nameof(CanRetry));
+        OnPropertyChanged(nameof(CanProvideCookies));
     }
 
     private static string FormatBytes(double bytes) => bytes switch
@@ -113,6 +122,15 @@ public sealed partial class JobsViewModel : ObservableObject
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    /// <summary>v2.0: jobs currently blocked by a bot check.</summary>
+    public int BlockedByCaptchaCount => _rows.Values.Count(r => r.CaptchaRequired);
+
+    public bool ShowCaptchaBanner => BlockedByCaptchaCount > 0;
+
+    public string CaptchaBannerText => BlockedByCaptchaCount == 1
+        ? "1 job is blocked by a bot check — provide cookies to continue."
+        : $"{BlockedByCaptchaCount} jobs are blocked by bot checks — provide cookies to continue.";
+
     public JobsViewModel(IApiClient api, LocalCache cache, DownloadWorker worker)
     {
         _api = api;
@@ -144,6 +162,7 @@ public sealed partial class JobsViewModel : ObservableObject
         foreach (var job in jobs.OrderByDescending(j => j.UpdatedAt))
             _rows[job.Id] = new JobRowViewModel(job);
         ApplyFilter();
+        RefreshCaptchaBanner();
     }
 
     [RelayCommand]
@@ -172,6 +191,40 @@ public sealed partial class JobsViewModel : ObservableObject
     {
         if (row is null) return;
         await _worker.RetryJobAsync(row.Id).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// v2.0 captcha flow: pick a cookies.txt, upload it per-source (or globally
+    /// when the job has no source), then ask the server to resume the job.
+    /// </summary>
+    [RelayCommand]
+    private async Task ProvideCookiesAsync(JobRowViewModel? row)
+    {
+        row ??= _rows.Values.FirstOrDefault(r => r.CaptchaRequired);
+        if (row is null)
+            return;
+        var dialog = new OpenFileDialog
+        {
+            Title = $"Select cookies.txt for job '{row.Title}'",
+            Filter = "Cookies files (*.txt)|*.txt|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+        try
+        {
+            if (row.SourceId > 0)
+                await _api.UploadSourceCookiesAsync(row.SourceId, dialog.FileName).ConfigureAwait(true);
+            else
+                await _api.UploadMyCookiesAsync(dialog.FileName).ConfigureAwait(true);
+            await _api.ResumeJobAsync(row.Id).ConfigureAwait(true);
+            StatusMessage = "Cookies provided; resume requested.";
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Provide cookies failed: {ex.Message}";
+        }
     }
 
     private void ApplyFilter()
@@ -211,12 +264,20 @@ public sealed partial class JobsViewModel : ObservableObject
                 else
                     _rows[e.JobId] = new JobRowViewModel(job);
                 ApplyFilter();
+                RefreshCaptchaBanner();
             }
             catch (Exception)
             {
                 // Cache read failed; the next refresh will reconcile.
             }
         });
+    }
+
+    private void RefreshCaptchaBanner()
+    {
+        OnPropertyChanged(nameof(BlockedByCaptchaCount));
+        OnPropertyChanged(nameof(ShowCaptchaBanner));
+        OnPropertyChanged(nameof(CaptchaBannerText));
     }
 
     private void PostToUi(Action action)

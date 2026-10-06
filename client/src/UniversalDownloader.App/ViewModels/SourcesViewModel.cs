@@ -1,6 +1,8 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
+using UniversalDownloader.Core.Cookies;
 using UniversalDownloader.Core.Models;
 using UniversalDownloader.Infrastructure.Api;
 using UniversalDownloader.Infrastructure.Cache;
@@ -17,10 +19,14 @@ public sealed partial class SourceRowViewModel : ObservableObject
     [ObservableProperty] private string _inputValue = string.Empty;
     [ObservableProperty] private string _canonicalId = string.Empty;
     [ObservableProperty] private SourceStatus _status;
+    [ObservableProperty] private bool _hasCookies;
 
     public string StatusText => Status.ToString();
     public bool CanPause => Status == SourceStatus.Active;
     public bool CanResume => Status == SourceStatus.Paused;
+
+    /// <summary>v2.0: subtle indicator that the server holds cookies for this source.</summary>
+    public string CookiesBadge => HasCookies ? "Cookies ✓" : string.Empty;
 
     public SourceRowViewModel(Source model)
     {
@@ -30,6 +36,7 @@ public sealed partial class SourceRowViewModel : ObservableObject
         _inputValue = model.InputValue;
         _canonicalId = model.CanonicalId;
         _status = model.Status;
+        _hasCookies = model.HasCookies;
     }
 
     public void SyncStatus(SourceStatus status)
@@ -39,6 +46,13 @@ public sealed partial class SourceRowViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(CanPause));
         OnPropertyChanged(nameof(CanResume));
+    }
+
+    public void SetHasCookies(bool hasCookies)
+    {
+        Model.HasCookies = hasCookies;
+        HasCookies = hasCookies;
+        OnPropertyChanged(nameof(CookiesBadge));
     }
 }
 
@@ -77,6 +91,7 @@ public sealed partial class SourcesViewModel : ObservableObject
             var models = dtos.Select(DtoMapper.ToSource).ToList();
             await _cache.UpsertSourcesAsync(models).ConfigureAwait(true);
             LoadRows(models);
+            await RefreshCookiesStatusAsync().ConfigureAwait(true);
         }
         catch (Exception)
         {
@@ -85,6 +100,28 @@ public sealed partial class SourcesViewModel : ObservableObject
             LoadRows(cached.ToList());
             StatusMessage = "Offline: showing cached sources.";
         }
+    }
+
+    /// <summary>
+    /// v2.0: the sources list carries no cookie flags, so the presence-only
+    /// GET /api/v1/sources/{id}/cookies status is fetched per source
+    /// (best effort; cookie values are never returned).
+    /// </summary>
+    private async Task RefreshCookiesStatusAsync()
+    {
+        foreach (var row in Sources)
+        {
+            try
+            {
+                var status = await _api.GetSourceCookiesStatusAsync(row.Id).ConfigureAwait(true);
+                row.SetHasCookies(status.Present);
+            }
+            catch (Exception)
+            {
+                // Best effort: keep the previous flag.
+            }
+        }
+        await _cache.UpsertSourcesAsync(Sources.Select(r => r.Model)).ConfigureAwait(true);
     }
 
     [RelayCommand]
@@ -156,6 +193,52 @@ public sealed partial class SourcesViewModel : ObservableObject
         catch (ApiException ex)
         {
             StatusMessage = $"Remove failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>v2.0: uploads a cookies.txt for a source (bot-check fallback).</summary>
+    [RelayCommand]
+    private async Task UploadSourceCookiesAsync(SourceRowViewModel? row)
+    {
+        if (row is null) return;
+        var dialog = new OpenFileDialog
+        {
+            Title = $"Select cookies.txt for {row.InputValue}",
+            Filter = "Cookies files (*.txt)|*.txt|All files (*.*)|*.*",
+            CheckFileExists = true,
+        };
+        if (dialog.ShowDialog() != true)
+            return;
+        if (!CookieJar.IsNetscapeFormat(dialog.FileName))
+            StatusMessage = "Warning: file doesn't look like a Netscape cookies.txt — uploading anyway.";
+        try
+        {
+            await _api.UploadSourceCookiesAsync(row.Id, dialog.FileName).ConfigureAwait(true);
+            row.SetHasCookies(true);
+            await _cache.UpsertSourcesAsync(new[] { row.Model }).ConfigureAwait(true);
+            StatusMessage = "Cookies uploaded for source.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Cookies upload failed: {ex.Message}";
+        }
+    }
+
+    /// <summary>v2.0: clears a source's server-side cookies.</summary>
+    [RelayCommand]
+    private async Task ClearSourceCookiesAsync(SourceRowViewModel? row)
+    {
+        if (row is null) return;
+        try
+        {
+            await _api.DeleteSourceCookiesAsync(row.Id).ConfigureAwait(true);
+            row.SetHasCookies(false);
+            await _cache.UpsertSourcesAsync(new[] { row.Model }).ConfigureAwait(true);
+            StatusMessage = "Source cookies cleared.";
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = $"Clear cookies failed: {ex.Message}";
         }
     }
 

@@ -68,6 +68,7 @@ public partial class App : System.Windows.Application
             ConcurrencyLimit = settings.ConcurrencyLimit,
             DestinationDirectory = settings.DestinationDirectory,
             NamingTemplate = settings.NamingTemplate,
+            GlobalCookiesFilePath = settings.GlobalCookiesFilePath,
         };
         services.AddSingleton(workerOptions);
         _worker = new DownloadWorker(apiClient, _cache, _network, workerOptions, new TraceWorkerLog());

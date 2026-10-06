@@ -34,6 +34,22 @@
                     <GridViewColumn Header="Input" Width="260" DisplayMemberBinding="{Binding InputValue}"/>
                     <GridViewColumn Header="Canonical ID" Width="220" DisplayMemberBinding="{Binding CanonicalId}"/>
                     <GridViewColumn Header="Status" Width="80" DisplayMemberBinding="{Binding StatusText}"/>
+                    <GridViewColumn Header="Cookies" Width="230">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding CookiesBadge}" Foreground="{StaticResource SuccessBrush}"
+                                               FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,6,0"
+                                               Visibility="{Binding HasCookies, Converter={StaticResource BoolToVis}}"/>
+                                    <Button Content="Cookies…" Command="{Binding DataContext.UploadSourceCookiesCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}"/>
+                                    <Button Content="Clear" Command="{Binding DataContext.ClearSourceCookiesCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                            CommandParameter="{Binding}"
+                                            Visibility="{Binding HasCookies, Converter={StaticResource BoolToVis}}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
                     <GridViewColumn Header="Actions" Width="330">
                         <GridViewColumn.CellTemplate>
                             <DataTemplate>

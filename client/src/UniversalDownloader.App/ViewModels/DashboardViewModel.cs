@@ -39,6 +39,21 @@ public sealed partial class DashboardViewModel : ObservableObject
     [ObservableProperty] private int _completedCount;
     [ObservableProperty] private int _failedCount;
 
+    /// <summary>v2.0: jobs blocked by a bot check (need cookies).</summary>
+    [ObservableProperty] private int _blockedByCaptchaCount;
+    [ObservableProperty] private string _captchaBannerText = string.Empty;
+
+    public bool ShowCaptchaBanner => BlockedByCaptchaCount > 0;
+
+    partial void OnBlockedByCaptchaCountChanged(int value) =>
+        OnPropertyChanged(nameof(ShowCaptchaBanner));
+
+    /// <summary>v2.0: link-extractor test box.</summary>
+    [ObservableProperty] private string _testUrl = string.Empty;
+    [ObservableProperty] private string _extractResultText = string.Empty;
+    [ObservableProperty] private bool _hasExtractResult;
+    [ObservableProperty] private bool _isExtracting;
+
     [ObservableProperty] private string _todayBatchText = "—";
     [ObservableProperty] private string _upcomingBatchText = "—";
     [ObservableProperty] private string _connectivityText = "—";
@@ -72,7 +87,6 @@ public sealed partial class DashboardViewModel : ObservableObject
         var subscription = _session.Subscription;
         if (subscription is null)
             return;
-
         var now = DateTimeOffset.UtcNow;
         var status = subscription.DeriveStatus(now);
 
@@ -109,6 +123,10 @@ public sealed partial class DashboardViewModel : ObservableObject
             ActiveCount = jobs.Count(j => j.State is JobState.Downloading or JobState.RetryWait);
             CompletedCount = jobs.Count(j => j.State == JobState.Completed);
             FailedCount = jobs.Count(j => j.State == JobState.Failed);
+            BlockedByCaptchaCount = jobs.Count(j => j.CaptchaRequired && j.State != JobState.Completed);
+            CaptchaBannerText = BlockedByCaptchaCount == 1
+                ? "1 job is blocked by a bot check. Open the Jobs tab and choose “Provide cookies…” to continue."
+                : $"{BlockedByCaptchaCount} jobs are blocked by bot checks. Open the Jobs tab and choose “Provide cookies…” to continue.";
         }
         catch (Exception)
         {
@@ -143,5 +161,48 @@ public sealed partial class DashboardViewModel : ObservableObject
             ? $"Running ({_worker.ActiveCount} active)"
             : "Stopped";
         LastSyncText = $"Updated {DateTime.Now:HH:mm:ss}";
+    }
+
+    /// <summary>v2.0: tests the server-side link extractor against a URL.</summary>
+    [RelayCommand]
+    private async Task TestExtractAsync()
+    {
+        if (string.IsNullOrWhiteSpace(TestUrl))
+        {
+            ExtractResultText = "Enter a link first.";
+            HasExtractResult = true;
+            return;
+        }
+        IsExtracting = true;
+        try
+        {
+            var result = await _api.ExtractAsync(TestUrl.Trim()).ConfigureAwait(true);
+            if (result is null)
+            {
+                ExtractResultText = "The extractor returned no result.";
+            }
+            else if (!result.Ok)
+            {
+                ExtractResultText = $"Extraction failed: {result.Error ?? "unknown error"}" +
+                    (result.CaptchaRequired ? " (bot check detected — provide cookies and retry)" : string.Empty);
+            }
+            else
+            {
+                ExtractResultText =
+                    $"Title: {result.Title ?? "—"}\nExtension: {result.Ext ?? "—"}\n" +
+                    $"Strategy: {result.Strategy ?? "—"}" +
+                    (string.IsNullOrWhiteSpace(result.MediaUrl) ? string.Empty : $"\nURL: {result.MediaUrl}");
+            }
+            HasExtractResult = true;
+        }
+        catch (Exception ex)
+        {
+            ExtractResultText = $"Extraction failed: {ex.Message}";
+            HasExtractResult = true;
+        }
+        finally
+        {
+            IsExtracting = false;
+        }
     }
 }

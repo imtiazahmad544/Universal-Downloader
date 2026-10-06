@@ -84,11 +84,38 @@ For the signed MSIX installer, see [installer/README.md](installer/README.md).
 - `ClientSettings` persists to `%AppData%\UniversalDownloader\settings.json`:
   `ApiBaseUrl` (default `https://api.universaldownloader.example`),
   `DestinationDirectory` (default `%USERPROFILE%\Downloads\UniversalDownloader`),
-  `NamingTemplate`, `BatchLength`, `ConcurrencyLimit`, `TimezoneId`.
+  `NamingTemplate`, `BatchLength`, `ConcurrencyLimit` (v2.0: 1–5, default 3),
+  `TimezoneId`, `DailyStartTime` (v2.0: "HH:MM", default `"00:00"`, synced to the
+  server via `PATCH /api/v1/me/settings` on Save),
+  `GlobalCookiesFilePath` (v2.0: optional Netscape `cookies.txt`).
 - The refresh token is DPAPI-encrypted in `%AppData%\UniversalDownloader\tokens.dat`
   (Windows-only; `ProtectedData` requires `net8.0-windows` or the
   `System.Security.Cryptography.ProtectedData` package — referenced here).
 - SQLite cache lives at `%AppData%\UniversalDownloader\cache.db`.
+
+## v2.0 features
+
+- **Parallel downloads:** files over 8 MB download in N = `ConcurrencyLimit`
+  (3–5) parallel Range segments when the server honors ranges; smaller files
+  and resume continuations stay on the single-connection path. Pause/cancel
+  apply across all segments.
+- **Cookies (optional):** Settings holds an optional global `cookies.txt`
+  (Netscape format; validated with a warn-but-allow policy) used for download
+  `Cookie` headers, and can upload/clear server-side global cookies
+  (`PUT`/`DELETE /api/v1/me/cookies`). Each source row has **Cookies…** /
+  **Clear** buttons (`PUT`/`DELETE /api/v1/sources/{id}/cookies`, multipart
+  field `file`); a badge shows when the server holds cookies for a source.
+  Cookie *values* never travel from server to client — only present-flags.
+- **Captcha flow:** jobs flagged `captcha_required` show a warning banner
+  ("Blocked by bot check — provide cookies to continue") in Jobs (banner +
+  per-row button) and a banner on the Dashboard. **Provide cookies…** opens a
+  file picker, uploads per-source (or globally when the job has no source),
+  then calls resume on the job.
+- **Link extractor test:** the Dashboard has a "Test link" box calling
+  `POST /api/v1/extract` (`{"url": ...}`), showing title, extension, media URL,
+  and which fallback strategy hit (`ytdlp` → `ytdlp_cookies` → `opengraph` →
+  `oembed` → `video_tag`). Failures show the server error, including a
+  bot-check hint when `captcha_required` is returned.
 
 ## Key behaviors
 

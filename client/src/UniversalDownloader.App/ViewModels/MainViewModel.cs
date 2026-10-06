@@ -102,7 +102,12 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void ShowSettings() => CurrentView = _settingsView;
+    private void ShowSettings()
+    {
+        CurrentView = _settingsView;
+        // Best-effort presence flag refresh; never blocks navigation.
+        _ = _settingsView.ViewModel.RefreshServerCookiesStatusAsync();
+    }
 
     [RelayCommand]
     private async Task LogoutAsync()

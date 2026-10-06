@@ -19,8 +19,23 @@ public sealed class ClientSettings
     /// <summary>Videos processed per daily batch (SRS FR-07).</summary>
     public int BatchLength { get; set; } = 20;
 
-    /// <summary>Max concurrent downloads (SRS FR-07).</summary>
+    /// <summary>
+    /// Max concurrent downloads / parallel download segments, 1–5 (v2.0).
+    /// Validated by <see cref="ClientSettingsValidator"/>.
+    /// </summary>
     public int ConcurrencyLimit { get; set; } = 3;
+
+    /// <summary>
+    /// Daily batch start time, 24-hour "HH:MM" (v2.0). Synced to the server
+    /// via PATCH /api/v1/me/settings.
+    /// </summary>
+    public string DailyStartTime { get; set; } = "00:00";
+
+    /// <summary>
+    /// Optional global Netscape cookies.txt used for download requests and as
+    /// the default for the captcha/cookies fallback flow (v2.0).
+    /// </summary>
+    public string? GlobalCookiesFilePath { get; set; }
 
     /// <summary>IANA timezone id used for batch activation (v1.1).</summary>
     public string TimezoneId { get; set; } = TimeZoneInfo.Local.Id;
