@@ -9,6 +9,8 @@ from app.models.models import (
     Customer,
     DownloadFile,
     DownloadJob,
+    MediaItem,
+    Source,
     User,
 )
 from app.schemas.schemas import JobRead, JobStatusUpdate
@@ -19,6 +21,7 @@ from app.services.audit import (
     JOB_STATUS_CHANGED,
     log_event,
 )
+from app.services.cookies import resolve_cookies_for_source
 from app.services.state_machine import (
     CANCELLED,
     COMPLETED,
@@ -27,6 +30,7 @@ from app.services.state_machine import (
     PAUSED,
     QUEUED,
     READY,
+    RETRY_WAIT,
     validate_transition,
 )
 
@@ -122,10 +126,53 @@ def resume_job(
     db: Session = Depends(get_db),
     dep: tuple[User, Customer] = Depends(require_active_subscription),
 ) -> DownloadJob:
+    """Resume a paused job — or clear a captcha park (v2.0).
+
+    Captcha flow: when extraction/download hits a captcha/bot-check wall the
+    job is parked with captcha_required=True in a retryable state
+    (RETRY_WAIT) and last_error_code='E_CAPTCHA'. After uploading cookies,
+    this endpoint clears the flag and re-arms the job to READY so the next
+    attempt resolves cookies (source override wins, else customer global)
+    and retries WITH them. last_error_code is kept as history.
+    """
     user, customer = dep
     job = _get_owned_job(db, customer, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="job not found")
+
+    if job.captcha_required:
+        if job.status not in (RETRY_WAIT, READY, FAILED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"captcha-flagged jobs can only resume from "
+                f"{RETRY_WAIT!r}, {READY!r} or {FAILED!r} "
+                f"(status: {job.status!r})",
+            )
+        # Best-effort cookies check: warn (audit) when nothing would be sent
+        # with the retry, but don't block — the wall may have been transient.
+        cookies_available = _job_cookies_available(db, job)
+        from_status = job.status
+        job.captcha_required = False
+        if job.status != READY:
+            validate_transition(job.status, READY)  # 409 via handler when invalid
+            job.status = READY
+        db.commit()
+        db.refresh(job)
+        log_event(
+            db,
+            actor_id=user.id,
+            action=JOB_RESUMED,
+            entity_type="job",
+            entity_id=job.id,
+            meta={
+                "from": from_status,
+                "restored_to": READY,
+                "captcha_cleared": True,
+                "cookies_available": cookies_available,
+            },
+        )
+        return job
+
     if job.status != PAUSED:
         raise HTTPException(
             status_code=409, detail=f"only paused jobs can be resumed (status: {job.status!r})"
@@ -146,6 +193,21 @@ def resume_job(
         meta={"from": PAUSED, "restored_to": target},
     )
     return job
+
+
+def _job_cookies_available(db: Session, job: DownloadJob) -> bool:
+    """True when resolve_cookies_for_source() would yield cookies for the
+    job's source. Best-effort: any failure means 'not available'."""
+    try:
+        media = db.get(MediaItem, job.media_item_id)
+        if media is None:
+            return False
+        source = db.get(Source, media.source_id)
+        if source is None:
+            return False
+        return resolve_cookies_for_source(source, db) is not None
+    except Exception:
+        return False
 
 
 @router.patch("/{job_id}/status", response_model=JobRead)

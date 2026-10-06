@@ -1,6 +1,6 @@
 """Customer source management: list, create, update, remove, discover."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_customer_user, require_active_subscription
@@ -18,12 +18,15 @@ from app.models.models import (
     User,
 )
 from app.schemas.schemas import (
+    CookiesStatusRead,
     DiscoveryRunRead,
     SourceCreate,
     SourceRead,
     SourceUpdate,
 )
 from app.services.audit import (
+    COOKIES_DELETED,
+    COOKIES_UPDATED,
     DISCOVERY_REQUESTED,
     JOB_STATUS_CHANGED,
     SOURCE_CREATED,
@@ -31,6 +34,13 @@ from app.services.audit import (
     log_event,
 )
 from app.services.audit import SOURCE_REMOVED as AUDIT_SOURCE_REMOVED
+from app.services.cookies import (
+    MAX_COOKIES_BYTES,
+    clear_source_cookies,
+    cookies_status,
+    store_source_cookies,
+    validate_cookies_format,
+)
 from app.services.state_machine import (
     BATCHED,
     CANCELLED,
@@ -246,3 +256,101 @@ def request_discovery(
         meta={"source_id": source.id, "provider": "auto"},
     )
     return run
+
+
+# ---------------------------------------------------------------------------
+# Cookies (v2.0, optional): per-source encrypted Netscape cookies.
+# Raw values are NEVER returned; GETs report presence only.
+# ---------------------------------------------------------------------------
+
+
+async def _read_upload_text(file: UploadFile) -> str:
+    raw = await file.read()
+    if len(raw) > MAX_COOKIES_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"cookies file too large (max {MAX_COOKIES_BYTES} bytes)",
+        )
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(
+            status_code=400, detail="cookies file must be UTF-8 text"
+        ) from exc
+
+
+@router.put("/{source_id}/cookies", response_model=CookiesStatusRead)
+async def upload_source_cookies(
+    source_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    dep: tuple[User, Customer] = Depends(require_active_subscription),
+) -> dict:
+    """Upload (multipart field `file`) and encrypt per-source cookies.
+
+    Overrides the customer's global cookies for this source. The file must
+    look like Netscape cookies text; raw values are never stored in cleartext
+    and never returned.
+    """
+    user, customer = dep
+    source = _get_owned_source(db, customer, source_id)
+    if source is None or source.status == SOURCE_REMOVED:
+        raise HTTPException(status_code=404, detail="source not found")
+    text = await _read_upload_text(file)
+    try:
+        validate_cookies_format(text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        store_source_cookies(db, source, text)
+    except RuntimeError as exc:  # key misconfiguration (prod without key)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    db.commit()
+    db.refresh(source)
+    log_event(
+        db,
+        actor_id=user.id,
+        action=COOKIES_UPDATED,
+        entity_type="source",
+        entity_id=str(source.id),
+        meta={"scope": "source"},
+    )
+    return cookies_status(source)
+
+
+@router.get("/{source_id}/cookies", response_model=CookiesStatusRead)
+def get_source_cookies_status(
+    source_id: int,
+    db: Session = Depends(get_db),
+    dep: tuple[User, Customer] = Depends(get_customer_user),
+) -> dict:
+    """Presence-only cookies status. Raw values are never returned."""
+    _user, customer = dep
+    source = _get_owned_source(db, customer, source_id)
+    if source is None or source.status == SOURCE_REMOVED:
+        raise HTTPException(status_code=404, detail="source not found")
+    return cookies_status(source)
+
+
+@router.delete("/{source_id}/cookies", response_model=CookiesStatusRead)
+def delete_source_cookies(
+    source_id: int,
+    db: Session = Depends(get_db),
+    dep: tuple[User, Customer] = Depends(require_active_subscription),
+) -> dict:
+    user, customer = dep
+    source = _get_owned_source(db, customer, source_id)
+    if source is None or source.status == SOURCE_REMOVED:
+        raise HTTPException(status_code=404, detail="source not found")
+    clear_source_cookies(db, source)
+    db.commit()
+    db.refresh(source)
+    log_event(
+        db,
+        actor_id=user.id,
+        action=COOKIES_DELETED,
+        entity_type="source",
+        entity_id=str(source.id),
+        meta={"scope": "source"},
+    )
+    return cookies_status(source)

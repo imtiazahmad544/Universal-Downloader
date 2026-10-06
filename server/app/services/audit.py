@@ -24,7 +24,11 @@ JOB_STATUS_CHANGED = "job.status_changed"
 JOB_RETRIED = "job.retried"
 JOB_PAUSED = "job.paused"
 JOB_RESUMED = "job.resumed"
+JOB_CAPTCHA = "job.captcha"  # v2.0: job parked on a captcha/bot-check wall
 BATCH_CREATED = "batch.created"
+COOKIES_UPDATED = "cookies.updated"  # v2.0: cookies uploaded (never the values)
+COOKIES_DELETED = "cookies.deleted"  # v2.0
+CUSTOMER_SETTINGS_UPDATED = "customer.settings_updated"  # v2.0
 
 
 def log_event(

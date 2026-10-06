@@ -20,6 +20,7 @@ class ProviderResultType:
     UNSUPPORTED = "unsupported"
     RATE_LIMITED = "rate_limited"
     NON_RETRYABLE_ERROR = "non_retryable_error"
+    CAPTCHA = "captcha"  # v2.0: captcha/bot-check wall; upload cookies and retry
 
 
 @dataclass
@@ -54,6 +55,7 @@ class DownloadResult:
     checksum: str | None = None
     error: str | None = None
     retry_after: float | None = None  # seconds; set on RATE_LIMITED
+    captcha: bool = False  # v2.0: True when the failure was a captcha/bot-check wall
 
 
 # progress_callback(downloaded_bytes, total_bytes_or_None)
@@ -65,16 +67,21 @@ class DiscoveryProvider(ABC):
     supported_platforms: set[str]
 
     @abstractmethod
-    async def discover(self, source: "Source") -> DiscoveryResult:
+    async def discover(
+        self, source: "Source", cookies: str | None = None
+    ) -> DiscoveryResult:
         """Discover media items for a source. Must not raise for expected
-        failures — encode them in DiscoveryResult.result_type instead."""
+        failures — encode them in DiscoveryResult.result_type instead.
+
+        `cookies` is optional raw Netscape cookies text supplied by the
+        customer (v2.0); None means unauthenticated extraction."""
 
 
 class DownloadProvider(ABC):
     name: str
 
     @abstractmethod
-    async def inspect(self, media_url: str) -> MediaInfo:
+    async def inspect(self, media_url: str, cookies: str | None = None) -> MediaInfo:
         """Probe a media URL for metadata without downloading."""
 
     @abstractmethod
@@ -83,6 +90,7 @@ class DownloadProvider(ABC):
         media: DiscoveredMedia,
         destination: str,
         progress_callback: ProgressCallback | None,
+        cookies: str | None = None,
     ) -> DownloadResult:
         """Download media to `destination`, reporting progress via the callback."""
 

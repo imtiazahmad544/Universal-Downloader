@@ -30,14 +30,14 @@ class InstagramDiscoveryProvider(DiscoveryProvider):
     name = "instagram-official"
     supported_platforms = {"instagram"}
 
-    async def discover(self, source) -> DiscoveryResult:
+    async def discover(self, source, cookies: str | None = None) -> DiscoveryResult:
         return DiscoveryResult(ProviderResultType.UNSUPPORTED, error=_NOT_IMPLEMENTED)
 
 
 class InstagramDownloadProvider(DownloadProvider):
     name = "instagram-official"
 
-    async def inspect(self, media_url: str) -> MediaInfo:
+    async def inspect(self, media_url: str, cookies: str | None = None) -> MediaInfo:
         raise RuntimeError(_NOT_IMPLEMENTED)
 
     async def download(
@@ -45,5 +45,6 @@ class InstagramDownloadProvider(DownloadProvider):
         media: DiscoveredMedia,
         destination: str,
         progress_callback: ProgressCallback | None,
+        cookies: str | None = None,
     ) -> DownloadResult:
         return DownloadResult(ProviderResultType.UNSUPPORTED, error=_NOT_IMPLEMENTED)

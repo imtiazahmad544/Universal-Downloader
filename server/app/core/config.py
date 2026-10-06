@@ -43,5 +43,17 @@ class Settings(BaseSettings):
     TIKTOK_API_SECRET: str = ""
     INSTAGRAM_API_TOKEN: str = ""
 
+    # Deployment environment: "dev" or "prod"/"production".
+    APP_ENV: str = "dev"
+
+    # API version string (surfaced as FastAPI version).
+    APP_VERSION: str = "2.0.0"
+
+    # Cookies encryption (v2.0, optional feature). A Fernet key: base64
+    # urlsafe-encoded 32 bytes (44 chars), e.g. from
+    # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+    # Empty -> dev-only ephemeral key (loud warning); prod REQUIRES a real key.
+    COOKIES_ENCRYPTION_KEY: str = ""
+
 
 settings = Settings()

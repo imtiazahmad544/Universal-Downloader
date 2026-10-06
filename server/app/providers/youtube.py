@@ -1,11 +1,16 @@
 """YouTube provider adapters backed by the optional yt-dlp dependency.
 
 Compliance (by design, not by request):
-    - Public metadata only. The adapters never authenticate, never inject
-      cookies or credentials, and never bypass access controls.
+    - Public metadata only by default. Cookies are ONLY ever used when the
+      customer explicitly uploads their own (optional v2.0 feature); they are
+      the customer's own session, never harvested, and never bypass access
+      controls on content the customer couldn't already see.
     - No rate-limit circumvention. Rate-limit signals are classified as
       RATE_LIMITED so the discovery worker fails the run (and stops
       provider rotation) instead of trying to dodge the limit.
+    - Captcha / bot-check walls are classified as CAPTCHA (v2.0): jobs are
+      parked in a retryable state with jobs.captcha_required=True and
+      jobs.last_error_code='E_CAPTCHA' instead of burning retries.
 
 yt-dlp is OPTIONAL: when it is not installed every entry point reports
 UNSUPPORTED with an install hint instead of raising ImportError.
@@ -24,6 +29,12 @@ from app.providers.base import (
     MediaInfo,
     ProgressCallback,
     ProviderResultType,
+)
+from app.services.extractor import (
+    LinkExtractor,
+    delete_temp_file,
+    is_captcha_error,
+    write_temp_cookies_file,
 )
 
 _YTDLP_MISSING = (
@@ -46,7 +57,17 @@ def _source_url(input_value: str) -> str:
 
 
 def _classify_ydl_error(exc: Exception) -> DiscoveryResult:
-    """Map a yt-dlp exception to a DiscoveryResult without raising."""
+    """Map a yt-dlp exception to a DiscoveryResult without raising.
+
+    Captcha / bot-check walls are classified FIRST (v2.0): they are neither
+    rate limits nor ordinary retryable errors — the caller parks the job/run
+    with E_CAPTCHA and waits for cookies instead of retrying blindly.
+    """
+    if is_captcha_error(exc):
+        return DiscoveryResult(
+            ProviderResultType.CAPTCHA,
+            error=f"captcha/bot-check detected: {exc}",
+        )
     msg = str(exc).lower()
     if "429" in msg or "too many requests" in msg or "rate" in msg:
         return DiscoveryResult(
@@ -66,20 +87,27 @@ def _classify_ydl_error(exc: Exception) -> DiscoveryResult:
 
 class YouTubeDiscoveryProvider(DiscoveryProvider):
     """Discover public videos from a YouTube channel/handle/playlist URL via
-    yt-dlp flat extraction (metadata only, no downloads)."""
+    yt-dlp flat extraction (metadata only, no downloads).
+
+    `cookies` (v2.0): optional raw Netscape cookies text supplied by the
+    customer; passed to yt-dlp via a temp --cookies file that is deleted
+    afterwards. Raw values are never logged.
+    """
 
     name = "youtube-ytdlp"
     supported_platforms = {"youtube"}
 
-    async def discover(self, source) -> DiscoveryResult:
+    async def discover(
+        self, source, cookies: str | None = None
+    ) -> DiscoveryResult:
         try:
             import yt_dlp  # noqa: F401
         except ImportError:
             return DiscoveryResult(ProviderResultType.UNSUPPORTED, error=_YTDLP_MISSING)
         # yt-dlp is blocking: keep it off the event loop.
-        return await asyncio.to_thread(self._discover_sync, source)
+        return await asyncio.to_thread(self._discover_sync, source, cookies)
 
-    def _discover_sync(self, source) -> DiscoveryResult:
+    def _discover_sync(self, source, cookies: str | None) -> DiscoveryResult:
         import yt_dlp
 
         ydl_opts = {
@@ -88,12 +116,19 @@ class YouTubeDiscoveryProvider(DiscoveryProvider):
             "quiet": True,
             "no_warnings": True,
         }
-        url = _source_url(source.input_value)
+        cookie_path = write_temp_cookies_file(cookies) if cookies else None
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-        except Exception as exc:  # yt-dlp raises many concrete error types
-            return _classify_ydl_error(exc)
+            if cookie_path:
+                ydl_opts["cookiefile"] = cookie_path
+            url = _source_url(source.input_value)
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+            except Exception as exc:  # yt-dlp raises many concrete error types
+                return _classify_ydl_error(exc)
+        finally:
+            # The temp cookies file must never linger on disk.
+            delete_temp_file(cookie_path)
         entries = info.get("entries") or []
         items: list[DiscoveredMedia] = []
         for entry in entries:
@@ -114,30 +149,26 @@ class YouTubeDiscoveryProvider(DiscoveryProvider):
 
 
 class YouTubeDownloadProvider(DownloadProvider):
-    """Download public YouTube media via yt-dlp. No auth, no cookie use."""
+    """Download YouTube media via yt-dlp, with the v2.0 ultra link extractor
+    as the metadata probe and optional customer cookies for walled content."""
 
     name = "youtube-ytdlp"
 
-    async def inspect(self, media_url: str) -> MediaInfo:
-        try:
-            import yt_dlp  # noqa: F401
-        except ImportError:
-            raise RuntimeError(_YTDLP_MISSING_DOWNLOAD)
-        return await asyncio.to_thread(self._inspect_sync, media_url)
+    async def inspect(
+        self, media_url: str, cookies: str | None = None
+    ) -> MediaInfo:
+        """Probe a media URL via the LinkExtractor fallback chain.
 
-    def _inspect_sync(self, media_url: str) -> MediaInfo:
-        import yt_dlp
-
-        ydl_opts = {"skip_download": True, "quiet": True, "no_warnings": True}
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(media_url, download=False)
-        if not info:
-            raise RuntimeError(f"yt-dlp returned no metadata for {media_url!r}")
+        Raises ExtractionError (with .captcha_detected) when every strategy
+        fails; RuntimeError when yt-dlp itself is unavailable and no HTTP
+        fallback can run either.
+        """
+        extractor = LinkExtractor()
+        media = await asyncio.to_thread(extractor.extract, media_url, cookies)
         return MediaInfo(
-            url=media_url,
-            title=info.get("title"),
-            ext=info.get("ext"),
-            filesize=info.get("filesize"),
+            url=media.url,
+            title=media.title,
+            ext=media.ext,
         )
 
     async def download(
@@ -145,6 +176,7 @@ class YouTubeDownloadProvider(DownloadProvider):
         media: DiscoveredMedia,
         destination: str,
         progress_callback: ProgressCallback | None,
+        cookies: str | None = None,
     ) -> DownloadResult:
         try:
             import yt_dlp  # noqa: F401
@@ -153,7 +185,7 @@ class YouTubeDownloadProvider(DownloadProvider):
                 ProviderResultType.UNSUPPORTED, error=_YTDLP_MISSING_DOWNLOAD
             )
         return await asyncio.to_thread(
-            self._download_sync, media, destination, progress_callback
+            self._download_sync, media, destination, progress_callback, cookies
         )
 
     def _download_sync(
@@ -161,6 +193,7 @@ class YouTubeDownloadProvider(DownloadProvider):
         media: DiscoveredMedia,
         destination: str,
         progress_callback: ProgressCallback | None,
+        cookies: str | None,
     ) -> DownloadResult:
         import yt_dlp
 
@@ -182,19 +215,27 @@ class YouTubeDownloadProvider(DownloadProvider):
             "no_warnings": True,
             "progress_hooks": hooks,
         }
+        cookie_path = write_temp_cookies_file(cookies) if cookies else None
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(media.url, download=True)
-                if not info:
-                    return DownloadResult(
-                        ProviderResultType.NON_RETRYABLE_ERROR,
-                        error=f"yt-dlp downloaded nothing for {media.url!r}",
-                    )
-                file_path = ydl.prepare_filename(info)
-        except Exception as exc:
-            return DownloadResult(
-                _classify_download_error(exc), error=str(exc)
-            )
+            if cookie_path:
+                ydl_opts["cookiefile"] = cookie_path
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    info = ydl.extract_info(media.url, download=True)
+                    if not info:
+                        return DownloadResult(
+                            ProviderResultType.NON_RETRYABLE_ERROR,
+                            error=f"yt-dlp downloaded nothing for {media.url!r}",
+                        )
+                    file_path = ydl.prepare_filename(info)
+            except Exception as exc:
+                return DownloadResult(
+                    _classify_download_error(exc),
+                    error=str(exc),
+                    captcha=is_captcha_error(exc),
+                )
+        finally:
+            delete_temp_file(cookie_path)
         if not os.path.isfile(file_path):
             return DownloadResult(
                 ProviderResultType.NON_RETRYABLE_ERROR,
@@ -210,6 +251,10 @@ class YouTubeDownloadProvider(DownloadProvider):
 
 
 def _classify_download_error(exc: Exception) -> str:
+    # Captcha walls are retryable-after-action (upload cookies), never
+    # non-retryable: the job is parked with E_CAPTCHA, not failed outright.
+    if is_captcha_error(exc):
+        return ProviderResultType.RETRYABLE_ERROR
     msg = str(exc).lower()
     if "429" in msg or "too many requests" in msg or "rate" in msg:
         return ProviderResultType.RATE_LIMITED

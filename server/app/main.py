@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api import health
 from app.api.v1.router import router as v1_router
+from app.core.config import settings
 from app.core.database import init_db
 from app.services.state_machine import InvalidTransitionError
 
@@ -18,7 +19,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Universal Downloader API", version="1.1.0", lifespan=lifespan)
+    app = FastAPI(title="Universal Downloader API", version=settings.APP_VERSION, lifespan=lifespan)
 
     @app.exception_handler(InvalidTransitionError)
     async def invalid_transition_handler(

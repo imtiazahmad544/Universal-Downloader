@@ -35,8 +35,25 @@ class CustomerRead(_ReadModel):
     contact_email: str | None
     contact_phone: str | None
     status: str
+    daily_start_time: str = "00:00"  # v2.0: local "HH:MM" batch window start
     created_at: datetime
     updated_at: datetime
+
+
+class CustomerSettingsUpdate(BaseModel):
+    """PATCH /me/settings body (v2.0)."""
+
+    # Plain str (no length constraints): validate_daily_start_time() in the
+    # endpoint rejects every malformed value with a uniform 400.
+    daily_start_time: str
+
+
+class CookiesStatusRead(BaseModel):
+    """v2.0: presence-only cookies status. Raw cookie values are NEVER
+    returned by any endpoint."""
+
+    present: bool
+    updated_at: datetime | None
 
 
 # ---------------------------------------------------------------------------
@@ -156,6 +173,10 @@ class JobRead(_ReadModel):
     attempts: int
     progress: float = 0
     provider: str | None
+    # v2.0: captcha flow + extraction strategy tracking.
+    captcha_required: bool = False
+    extraction_strategy: str | None = None
+    last_error_code: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -216,6 +237,25 @@ class AuditLogRead(_ReadModel):
 
 
 # ---------------------------------------------------------------------------
+# Link extractor (v2.0)
+# ---------------------------------------------------------------------------
+
+
+class ExtractRequest(BaseModel):
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class ExtractResponse(BaseModel):
+    ok: bool
+    media_url: str | None = None
+    title: str | None = None
+    ext: str | None = None
+    strategy: str | None = None
+    error: str | None = None
+    captcha_required: bool = False
+
+
+# ---------------------------------------------------------------------------
 # Auth
 # ---------------------------------------------------------------------------
 
@@ -239,6 +279,8 @@ __all__ = [
     "CustomerCreate",
     "CustomerUpdate",
     "CustomerRead",
+    "CustomerSettingsUpdate",
+    "CookiesStatusRead",
     "SubscriptionRead",
     "RenewalRequest",
     "RenewalRead",
@@ -254,6 +296,8 @@ __all__ = [
     "FileRead",
     "ProviderEventRead",
     "AuditLogRead",
+    "ExtractRequest",
+    "ExtractResponse",
     "LoginRequest",
     "TokenPair",
     "RefreshRequest",

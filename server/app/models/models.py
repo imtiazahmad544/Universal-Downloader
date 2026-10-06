@@ -22,7 +22,9 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -86,6 +88,7 @@ EVENT_RATE_LIMITED = "rate_limited"
 EVENT_UNSUPPORTED = "unsupported"
 EVENT_ERROR = "error"
 EVENT_SUCCESS = "success"
+EVENT_CAPTCHA = "captcha"  # v2.0: captcha/bot-check detected
 
 
 class Customer(Base):
@@ -100,6 +103,19 @@ class Customer(Base):
     timezone: Mapped[str | None] = mapped_column(
         String(64), nullable=True
     )  # IANA timezone for batch scheduling; null -> server default (UTC)
+    # v2.0: daily batch window opens at this local time ("HH:MM", 24h).
+    daily_start_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, default="00:00", server_default=text("'00:00'")
+    )
+    # v2.0: last time the batch scheduler completed a pass for this customer
+    # (naive UTC). Used for missed-window catch-up.
+    last_scheduler_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+    # v2.0: optional encrypted Netscape cookies (global fallback for all the
+    # customer's sources). Fernet-encrypted; see app.services.cookies.
+    cookies_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cookies_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow, onupdate=utcnow
@@ -181,6 +197,10 @@ class Source(Base):
     input_value: Mapped[str] = mapped_column(String(1024), nullable=False)
     canonical_id: Mapped[str] = mapped_column(String(1024), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=SOURCE_ACTIVE)
+    # v2.0: optional encrypted Netscape cookies overriding the customer's
+    # global cookies for this source. Fernet-encrypted; see app.services.cookies.
+    cookies_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    cookies_updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow, onupdate=utcnow
@@ -270,6 +290,17 @@ class DownloadJob(Base):
     progress: Mapped[float | None] = mapped_column(
         Float, nullable=True
     )  # 0-100 download progress percent, reported by the Windows client
+    # v2.0: captcha/bot-check flow. When extraction or download hits a
+    # captcha, captcha_required is set and the job is parked in a retryable
+    # state (RETRY_WAIT); POST /jobs/{id}/resume clears the flag and retries
+    # with the customer's cookies. last_error_code='E_CAPTCHA' records why.
+    captcha_required: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
+    )
+    # v2.0: which LinkExtractor strategy produced this job's media URL
+    # (e.g. "ytdlp", "ytdlp_cookies", "opengraph", "oembed", "video_tag").
+    extraction_strategy: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow, onupdate=utcnow
@@ -392,6 +423,7 @@ __all__ = [
     "EVENT_UNSUPPORTED",
     "EVENT_ERROR",
     "EVENT_SUCCESS",
+    "EVENT_CAPTCHA",
 ]
 
 
