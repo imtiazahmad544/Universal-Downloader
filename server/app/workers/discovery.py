@@ -30,6 +30,7 @@ from app.models.models import (
     DISCOVERY_PENDING,
     DISCOVERY_RUNNING,
     DISCOVERY_SUCCESS,
+    EVENT_CAPTCHA,
     EVENT_ERROR,
     EVENT_RATE_LIMITED,
     MEDIA_DISCOVERED,
@@ -53,6 +54,8 @@ from app.services.audit import (
     PROVIDER_SELECTED,
     log_event,
 )
+from app.services.cookies import resolve_cookies_for_source
+from app.services.extractor import is_captcha_error
 from app.services.state_machine import DISCOVERED as JOB_DISCOVERED
 
 logger = get_logger("universal-downloader.workers.discovery")
@@ -294,6 +297,23 @@ def _load_context(run_id: int) -> dict | None:
         db.close()
 
 
+def _resolve_source_cookies(source_id: int) -> str | None:
+    """Resolve the customer's cookies for a source (v2.0).
+
+    Source-level override wins; otherwise the customer's global cookies.
+    Runs in a worker thread with its own session. Returns raw Netscape text
+    or None; values are never logged (see cookies.resolve_cookies_for_source).
+    """
+    db: Session = SessionLocal()
+    try:
+        source = db.get(Source, source_id)
+        if source is None:
+            return None
+        return resolve_cookies_for_source(source, db)
+    finally:
+        db.close()
+
+
 # ---------------------------------------------------------------------------
 # Run processing
 # ---------------------------------------------------------------------------
@@ -361,6 +381,25 @@ async def _handle_result(
         )
         return "done"
 
+    if rt == ProviderResultType.CAPTCHA or is_captcha_error(result.error or ""):
+        # v2.0 captcha wall: do NOT burn retries. The run fails with a clear
+        # signal; the customer uploads cookies and re-requests discovery.
+        # (Jobs parked with E_CAPTCHA are retried via POST /jobs/{id}/resume.)
+        await asyncio.to_thread(
+            _provider_event,
+            run_id,
+            provider.name,
+            EVENT_CAPTCHA,
+            {"error": (result.error or "")[:500]},
+        )
+        await asyncio.to_thread(
+            _fail_run,
+            run_id,
+            "captcha/bot-check detected; upload cookies for this source and "
+            "request discovery again",
+        )
+        return "done"
+
     # NON_RETRYABLE_ERROR (and any unknown result type: fail closed)
     await asyncio.to_thread(
         _fail_run, run_id, result.error or "non-retryable provider error"
@@ -383,6 +422,9 @@ async def process(run_id: int) -> None:
 
     registry = get_discovery_providers()
     tried: list[str] = []
+    # v2.0: resolve the customer's cookies once per run (source override wins)
+    # and hand them to every provider attempt. Raw values never hit the logs.
+    cookies = await asyncio.to_thread(_resolve_source_cookies, ctx["source_id"])
     for provider in registry:
         if ctx["platform"] not in provider.supported_platforms:
             continue
@@ -402,7 +444,7 @@ async def process(run_id: int) -> None:
             run_id=run_id,
             provider=provider.name,
         )
-        result = await provider.discover(ctx["source_proxy"])
+        result = await provider.discover(ctx["source_proxy"], cookies=cookies)
         outcome = await _handle_result(ctx, provider, result)
         if outcome == "continue":
             tried.append(provider.name)

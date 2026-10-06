@@ -8,7 +8,10 @@ pyjwt
 pwdlib[argon2]
 httpx
 structlog
+cryptography
+python-multipart
 pytest
 pytest-asyncio
 psycopg[binary]
 redis
+yt-dlp==2026.8.19

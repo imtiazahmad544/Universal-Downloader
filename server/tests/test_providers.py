@@ -52,7 +52,7 @@ class _FakeUnsupported:
     def __init__(self):
         self.calls = 0
 
-    async def discover(self, source):
+    async def discover(self, source, cookies=None):
         self.calls += 1
         return DiscoveryResult(ProviderResultType.UNSUPPORTED, error="not me")
 
@@ -65,7 +65,7 @@ class _FakeSuccess:
         self.calls = 0
         self.items = items
 
-    async def discover(self, source):
+    async def discover(self, source, cookies=None):
         self.calls += 1
         return DiscoveryResult(ProviderResultType.SUCCESS, items=self.items)
 
@@ -78,7 +78,7 @@ class _FakeRateLimited:
         self.calls = 0
         self.retry_after = retry_after
 
-    async def discover(self, source):
+    async def discover(self, source, cookies=None):
         self.calls += 1
         return DiscoveryResult(
             ProviderResultType.RATE_LIMITED,
