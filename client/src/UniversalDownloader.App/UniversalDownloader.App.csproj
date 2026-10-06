@@ -20,6 +20,16 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
   </ItemGroup>
 
+  <!-- UseWPF + UseWindowsForms change the SDK's implicit usings: System.IO and
+       System.Net.Http are NOT included (CS0103/CS0246), while both
+       System.Windows.Forms and Microsoft.Win32 ARE (CS0104 ambiguities).
+       Fix centrally here instead of scattering usings. -->
+  <ItemGroup>
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+    <Using Remove="System.Windows.Forms" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\UniversalDownloader.Core\UniversalDownloader.Core.csproj" />
     <ProjectReference Include="..\UniversalDownloader.Infrastructure\UniversalDownloader.Infrastructure.csproj" />
